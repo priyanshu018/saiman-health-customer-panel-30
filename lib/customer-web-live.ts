@@ -10,6 +10,7 @@ export type AuthUserSummary = {
 export type DoctorSummary = {
   id: string;
   name: string;
+  avatarUrl: string | null;
   specialty: string;
   hospital: string;
   city: string;
@@ -210,7 +211,7 @@ export async function fetchApprovedDoctors() {
   const { data, error } = await supabase
     .from("users")
     .select(
-      "id,name,specialization,hospital,city,experience,fee,clinic_available_time,video_available_time,voice_available_time,chat_available_time",
+      "id,name,avatar_url,specialization,hospital,city,experience,fee,clinic_available_time,video_available_time,voice_available_time,chat_available_time",
     )
     .eq("role", "doctor")
     .eq("verification_status", "approved")
@@ -220,6 +221,7 @@ export async function fetchApprovedDoctors() {
   return (data || []).map((row) => ({
     id: row.id,
     name: text(row.name, "Doctor"),
+    avatarUrl: text(row.avatar_url) || null,
     specialty: text(row.specialization, "General Physician"),
     hospital: text(row.hospital, "Online consultation"),
     city: text(row.city, "City pending"),
