@@ -5,18 +5,25 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { CustomerGuard, CustomerShellAuthActions, useCustomerUser } from "@/components/customer-live";
-import { primaryNav } from "@/lib/customer-web-data";
+import { primaryNav, recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
 import {
+  createSupportTicket,
   fetchActiveInstantCallRequest,
   fetchApprovedDoctors,
+  fetchApprovedHospitals,
+  fetchApprovedLabTests,
   fetchCustomerProfile,
   fetchPatientAppointments,
+  fetchSupportTickets,
   loginCustomer,
   requestInstantCall,
   signupCustomer,
   type AppointmentSummary,
   type CustomerProfileSummary,
   type DoctorSummary,
+  type HospitalSummary,
+  type LabTestSummary,
+  type SupportTicketSummary,
 } from "@/lib/customer-web-live";
 import {
   addLocalBooking,
@@ -994,6 +1001,348 @@ export function WebPharmacyScreen() {
           </div>
         </section>
       ))}
+    </DashboardFrame>
+  );
+}
+
+export function WebLabTestsScreen() {
+  const [tests, setTests] = useState<LabTestSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetchApprovedLabTests()
+      .then(setTests)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = tests.filter((test) => {
+    const haystack = `${test.name} ${test.category} ${test.labName} ${test.city}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  return (
+    <DashboardFrame title="Lab Tests" subtitle="Search diagnostics, compare prices, and follow the same compare-and-book lab journey in a proper web layout.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Lab Tests</span>
+        <h2 style={styles.heroHeadingAlt}>Trusted diagnostics with clear pricing and faster reports.</h2>
+        <p style={styles.heroCopy}>Browse approved tests, review report timelines, and compare lab options from the same shared data used by the customer app.</p>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search tests, categories, or lab names..."
+        />
+      </section>
+
+      {loading ? <div style={styles.noticeCard}>Loading lab tests...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved lab tests available yet.</div> : null}
+
+      <div style={styles.serviceTileGrid}>
+        {filtered.map((test) => (
+          <div key={test.id} style={styles.infoTileCard}>
+            <span style={styles.blogTag}>{test.category}</span>
+            <h3 style={styles.tileTitle}>{test.name}</h3>
+            <p style={styles.tileCopy}>{test.labName}</p>
+            <div style={styles.tileMetaGrid}>
+              <span>{test.city}</span>
+              <span>{test.reportTime}</span>
+            </div>
+            <div style={styles.tileFooter}>
+              <strong>{formatMoney(test.price)}</strong>
+              <span style={styles.availableLabel}>Book soon</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebHospitalsScreen() {
+  const [hospitals, setHospitals] = useState<HospitalSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetchApprovedHospitals()
+      .then(setHospitals)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = hospitals.filter((hospital) => {
+    const haystack = `${hospital.name} ${hospital.city} ${hospital.address}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  return (
+    <DashboardFrame title="Hospitals & Surgeries" subtitle="Browse approved hospitals and surgery partners with a wider web view of the same hospital discovery flow.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Hospital Discovery</span>
+        <h2 style={styles.heroHeadingAlt}>Compare hospitals, specialties, and treatment access in one place.</h2>
+        <p style={styles.heroCopy}>This web screen mirrors the mobile hospital browsing experience but gives more room for addresses, capacity, and next steps.</p>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search hospitals, city, address..."
+        />
+      </section>
+
+      {loading ? <div style={styles.noticeCard}>Loading hospitals...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved hospitals available yet.</div> : null}
+
+      <div style={styles.serviceTileGrid}>
+        {filtered.map((hospital) => (
+          <div key={hospital.id} style={styles.infoTileCard}>
+            <span style={styles.blogTag}>Hospital</span>
+            <h3 style={styles.tileTitle}>{hospital.name}</h3>
+            <p style={styles.tileCopy}>{hospital.address}</p>
+            <div style={styles.tileMetaGrid}>
+              <span>{hospital.city}</span>
+              <span>{hospital.totalBeds ? `${hospital.totalBeds} beds` : "Beds on request"}</span>
+            </div>
+            <div style={styles.tileFooter}>
+              <span style={styles.availableLabel}>Approved partner</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebAmbulanceScreen() {
+  return (
+    <DashboardFrame title="Ambulance" subtitle="Request emergency transport and review the same emergency-response journey in a web-optimized layout.">
+      <div style={styles.twoColumnGrid}>
+        <section style={styles.heroPanel}>
+          <div style={styles.heroTag}>24×7 Emergency</div>
+          <h2 style={styles.heroHeading}>Emergency transport with quicker action steps.</h2>
+          <p style={styles.heroCopy}>Use this web entry point for ambulance help, emergency guidance, and hospital escalation when you need rapid support.</p>
+          <div style={styles.heroActionRow}>
+            <a href="tel:01244567890" style={styles.primaryActionLink}>Call 0124 456 7890</a>
+            <Link href="/support" style={styles.secondaryActionLink}>Emergency support ticket</Link>
+          </div>
+        </section>
+
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Tracked milestones</h2>
+          </div>
+          <div style={styles.stackList}>
+            {[
+              ["Request Created", "Share pickup location, patient context, and destination hospital."],
+              ["Vehicle Assigned", "The same workflow can show dispatch status and estimated arrival."],
+              ["Trip Completed", "Review bill summary, care handoff, and history in one place."],
+            ].map(([title, copy]) => (
+              <div key={title} style={styles.stepCard}>
+                <strong>{title}</strong>
+                <p>{copy}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebRecordsScreen() {
+  return (
+    <DashboardFrame title="Records" subtitle="Keep prescriptions, reports, consultation summaries, and health paperwork together in a single web record locker.">
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Digital Health Locker</h2>
+        </div>
+        <div style={styles.metricsGrid}>
+          {recordsSummary.map((item) => (
+            <div key={item.label} style={styles.metricCard}>
+              <span style={styles.metricLabel}>{item.label}</span>
+              <strong style={styles.metricValue}>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div style={styles.serviceTileGrid}>
+        {[
+          ["Prescriptions", "View doctor prescriptions and medication instructions in one place."],
+          ["Lab Reports", "Store report delivery history and downloadable diagnostic records."],
+          ["Consultation Notes", "Review doctor summaries, visit context, and future plan details."],
+          ["Insurance Docs", "Keep health cards and supporting paperwork easy to access."],
+        ].map(([title, copy]) => (
+          <div key={title} style={styles.infoTileCard}>
+            <h3 style={styles.tileTitle}>{title}</h3>
+            <p style={styles.tileCopy}>{copy}</p>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebSubscriptionPlansScreen() {
+  return (
+    <DashboardFrame title="Subscription Plans" subtitle="Explore bundled health-card style plans and member benefits in the same service family as the app.">
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Membership Plans</h2>
+        </div>
+        <div style={styles.planCardGrid}>
+          {subscriptionPlans.map((plan) => (
+            <div key={plan.name} style={styles.membershipCard}>
+              <span style={styles.subscriptionTag}>Plan</span>
+              <h3 style={styles.tileTitle}>{plan.name}</h3>
+              <div style={styles.membershipPrice}>{plan.price}</div>
+              <p style={styles.tileCopy}>{plan.detail}</p>
+              <button style={styles.primaryAction}>Choose Plan</button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+export function WebSupportScreen() {
+  const { user, state: authState, configured } = useCustomerUser();
+  const [tickets, setTickets] = useState<SupportTicketSummary[] | null>(null);
+  const [subject, setSubject] = useState("");
+  const [category, setCategory] = useState("Booking help");
+  const [message, setMessage] = useState("");
+  const [submitState, setSubmitState] = useState({ loading: false, message: "", error: "" });
+  const loading = configured && Boolean(user?.id) && tickets === null;
+
+  useEffect(() => {
+    let active = true;
+    if (!configured || !user?.id) {
+      return () => {
+        active = false;
+      };
+    }
+
+    fetchSupportTickets(user.id)
+      .then((items) => {
+        if (!active) return;
+        setTickets(items);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTickets([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [configured, user?.id]);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user) return;
+
+    setSubmitState({ loading: true, message: "", error: "" });
+    try {
+      await createSupportTicket({
+        userId: user.id,
+        userEmail: user.email,
+        subject,
+        category,
+        message,
+      });
+      const refreshed = await fetchSupportTickets(user.id);
+      setTickets(refreshed);
+      setSubject("");
+      setMessage("");
+      setSubmitState({ loading: false, message: "Support ticket submitted successfully.", error: "" });
+    } catch (error) {
+      setSubmitState({
+        loading: false,
+        message: "",
+        error: error instanceof Error ? error.message : "Unable to submit support ticket.",
+      });
+    }
+  }
+
+  return (
+    <DashboardFrame title="Support" subtitle="Raise tickets, track responses, and review common issue paths from the same shared support system.">
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Support Topics</h2>
+        </div>
+        <div style={styles.topicGrid}>
+          {supportTopics.map((topic) => (
+            <div key={topic} style={styles.topicChipCard}>
+              {topic}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {!configured ? <div style={styles.noticeCard}>Supabase env is missing for support access.</div> : null}
+      {configured && authState.loading ? <div style={styles.noticeCard}>Checking your customer session...</div> : null}
+      {configured && !authState.loading && !user ? (
+        <div style={styles.noticeCard}>Login with the same customer account to raise and review support tickets.</div>
+      ) : null}
+
+      {configured && user ? (
+        <div style={styles.twoColumnGrid}>
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Your Support Tickets</h2>
+            </div>
+            {loading ? <div style={styles.noticeCard}>Loading support tickets...</div> : null}
+            {!loading && tickets && !tickets.length ? <div style={styles.noticeCard}>No support tickets yet.</div> : null}
+            <div style={styles.stackList}>
+              {(tickets || []).map((ticket) => (
+                <div key={ticket.id} style={styles.stepCard}>
+                  <strong>{ticket.subject}</strong>
+                  <p>{ticket.category} · {ticket.priority}</p>
+                  <div style={styles.tileMetaGrid}>
+                    <span>{ticket.status}</span>
+                    <span>{ticket.lastMessageAt || "Just now"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Raise a Ticket</h2>
+            </div>
+            {submitState.error ? <div style={styles.errorNote}>{submitState.error}</div> : null}
+            {submitState.message ? <div style={styles.noticeCard}>{submitState.message}</div> : null}
+            <form onSubmit={handleSubmit} style={styles.formStack}>
+              <label style={styles.fieldLabel}>Subject</label>
+              <input style={styles.fieldInput} value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Describe the issue" required />
+              <label style={styles.fieldLabel}>Category</label>
+              <select style={styles.fieldInput} value={category} onChange={(event) => setCategory(event.target.value)}>
+                {supportTopics.map((topic) => (
+                  <option key={topic}>{topic}</option>
+                ))}
+              </select>
+              <label style={styles.fieldLabel}>Details</label>
+              <textarea
+                style={styles.textArea}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                placeholder="Share booking ids, payment concerns, or support context"
+                required
+              />
+              <button style={styles.primaryAction} type="submit" disabled={submitState.loading}>
+                {submitState.loading ? "Submitting..." : "Submit Support Request"}
+              </button>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -2399,5 +2748,121 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     gap: 18,
     justifyItems: "center",
+  },
+  serviceTileGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 18,
+  },
+  infoTileCard: {
+    borderRadius: 24,
+    padding: 20,
+    background: "#fff",
+    border: "1px solid #dbe5f4",
+    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    display: "grid",
+    gap: 10,
+    color: "#20346d",
+  },
+  tileTitle: {
+    margin: 0,
+    color: "#20346d",
+    fontSize: "1.45rem",
+    lineHeight: 1.1,
+    letterSpacing: "-0.04em",
+  },
+  tileCopy: {
+    margin: 0,
+    color: "#6f7ea4",
+    lineHeight: 1.6,
+  },
+  tileMetaGrid: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+    color: "#6f7ea4",
+  },
+  tileFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 4,
+    color: "#20346d",
+  },
+  stackList: {
+    display: "grid",
+    gap: 14,
+  },
+  stepCard: {
+    borderRadius: 22,
+    padding: 18,
+    background: "#f8fbff",
+    border: "1px solid #e7eefb",
+    display: "grid",
+    gap: 8,
+    color: "#20346d",
+  },
+  metricsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 16,
+  },
+  metricCard: {
+    borderRadius: 22,
+    padding: 20,
+    background: "#f8fbff",
+    border: "1px solid #e7eefb",
+    display: "grid",
+    gap: 10,
+  },
+  metricLabel: {
+    color: "#6f7ea4",
+    fontWeight: 700,
+  },
+  metricValue: {
+    color: "#20346d",
+    fontSize: "2rem",
+    lineHeight: 1,
+    letterSpacing: "-0.05em",
+  },
+  planCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 18,
+  },
+  membershipCard: {
+    borderRadius: 26,
+    padding: 22,
+    background: "#fff",
+    border: "1px solid #dbe5f4",
+    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    display: "grid",
+    gap: 12,
+    color: "#20346d",
+  },
+  membershipPrice: {
+    color: "#2f59ff",
+    fontSize: "1.7rem",
+    fontWeight: 900,
+    letterSpacing: "-0.04em",
+  },
+  topicGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 14,
+  },
+  topicChipCard: {
+    borderRadius: 18,
+    padding: "16px 18px",
+    background: "#eef3ff",
+    color: "#20346d",
+    fontWeight: 800,
+  },
+  formStack: {
+    display: "grid",
+    gap: 12,
   },
 };
