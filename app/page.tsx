@@ -17,7 +17,7 @@ export default function HomePage() {
   return (
     <CustomerShell
       title="One customer platform for every healthcare need."
-      subtitle="This web panel mirrors the Saiman customer application with one place for consultations, medicines, labs, hospitals, ambulance support, appointments, and records."
+      subtitle="The web portal now follows the same login-based customer journey as the Saiman app, with one place for consultations, medicines, labs, hospitals, ambulance support, appointments, and records."
     >
       <div className="hero-grid">
         <div className="hero-card">

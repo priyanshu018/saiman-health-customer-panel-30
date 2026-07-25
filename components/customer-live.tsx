@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
 import type {
   AppointmentSummary,
@@ -35,6 +35,14 @@ import { getSupabaseEnv } from "@/lib/supabase-browser";
 type LoadState = {
   loading: boolean;
   error: string;
+};
+
+type CustomerSessionState = {
+  user: AuthUserSummary | null;
+  setUser: React.Dispatch<React.SetStateAction<AuthUserSummary | null>>;
+  state: LoadState;
+  configured: boolean;
+  hasServiceRoleOnly: boolean;
 };
 
 function formatDateTime(value?: string) {
@@ -89,7 +97,7 @@ function InlineInfo({ message }: { message: string }) {
   return <div className="inline-alert">{message}</div>;
 }
 
-function useCustomerUser() {
+export function useCustomerUser(): CustomerSessionState {
   const [user, setUser] = useState<AuthUserSummary | null>(null);
   const env = getSupabaseEnv();
   const [state, setState] = useState<LoadState>({
@@ -125,7 +133,70 @@ function useCustomerUser() {
     };
   }, [env.configured]);
 
-  return { user, setUser, state, configured: env.configured };
+  return {
+    user,
+    setUser,
+    state,
+    configured: env.configured,
+    hasServiceRoleOnly: env.hasServiceRoleOnly,
+  };
+}
+
+export function CustomerGuard({
+  children,
+  fallbackTitle = "Checking your care account",
+  fallbackDetail = "Please wait while we verify your Saiman Health customer session.",
+}: {
+  children: React.ReactNode;
+  fallbackTitle?: string;
+  fallbackDetail?: string;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, state, configured, hasServiceRoleOnly } = useCustomerUser();
+
+  useEffect(() => {
+    if (!configured || state.loading || user) return;
+    const next = pathname && pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+    startTransition(() => {
+      router.replace(`/auth/login${next}`);
+    });
+  }, [configured, pathname, router, state.loading, user]);
+
+  if (!configured) {
+    return (
+      <div className="app-state-screen">
+        <div className="app-state-card">
+          <span className="state-badge">Supabase setup required</span>
+          <h1>Public web auth is not configured yet</h1>
+          <p>
+            Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> for this
+            Next.js app. The browser cannot use the service role key.
+          </p>
+          {hasServiceRoleOnly ? (
+            <div className="inline-alert error">
+              <strong>Unsafe env detected.</strong>
+              <span>`SUPABASE_SERVICE_ROLE_KEY` is present, but a public anon key is still missing.</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (state.loading || !user) {
+    return (
+      <div className="app-state-screen">
+        <div className="app-state-card">
+          <span className="state-badge">Customer access</span>
+          <h1>{fallbackTitle}</h1>
+          <p>{fallbackDetail}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
 
 export function CustomerShellAuthActions() {
@@ -181,7 +252,10 @@ export function CustomerShellAuthActions() {
 
 export function CustomerAuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const env = getSupabaseEnv();
+  const { user, state } = useCustomerUser();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -193,6 +267,15 @@ export function CustomerAuthForm({ mode }: { mode: "login" | "signup" }) {
     password: "",
     confirmPassword: "",
   });
+  const nextPath = searchParams.get("next") || "/";
+
+  useEffect(() => {
+    if (state.loading || !user) return;
+    startTransition(() => {
+      router.replace(nextPath);
+      router.refresh();
+    });
+  }, [nextPath, router, state.loading, user]);
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,7 +286,7 @@ export function CustomerAuthForm({ mode }: { mode: "login" | "signup" }) {
       await loginCustomer(loginForm.email, loginForm.password);
       setSuccess("Login successful. Redirecting to your dashboard...");
       startTransition(() => {
-        router.push("/");
+        router.push(nextPath);
         router.refresh();
       });
     } catch (err) {
@@ -235,7 +318,7 @@ export function CustomerAuthForm({ mode }: { mode: "login" | "signup" }) {
         "Account created successfully. If email confirmation is enabled in Supabase, verify your inbox before login.",
       );
       startTransition(() => {
-        router.push("/");
+        router.push(nextPath);
         router.refresh();
       });
     } catch (err) {
@@ -248,6 +331,18 @@ export function CustomerAuthForm({ mode }: { mode: "login" | "signup" }) {
   if (!env.configured) {
     return (
       <InlineError message="Supabase is not configured for this web app yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+    );
+  }
+
+  if (state.loading) {
+    return <InlineInfo message="Checking your current customer session..." />;
+  }
+
+  if (user) {
+    return (
+      <InlineInfo
+        message={`You are already signed in${pathname === "/auth/signup" ? "." : " and can continue to your dashboard."}`}
+      />
     );
   }
 

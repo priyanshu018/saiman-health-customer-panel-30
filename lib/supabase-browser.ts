@@ -2,17 +2,32 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
 
-function readEnv(name: string) {
-  if (typeof process === "undefined") return "";
-  return String(process.env[name] || "").trim();
-}
+const PUBLIC_SUPABASE_URL = String(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "",
+).trim();
+const PUBLIC_SUPABASE_ANON_KEY = String(
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
+).trim();
+const HAS_PUBLIC_SERVICE_ROLE = Boolean(
+  String(
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || "",
+  ).trim(),
+);
+const HAS_SERVER_SERVICE_ROLE = Boolean(String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim());
 
 export function getSupabaseEnv() {
-  const url = readEnv("NEXT_PUBLIC_SUPABASE_URL") || readEnv("EXPO_PUBLIC_SUPABASE_URL");
-  const anonKey =
-    readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") || readEnv("EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  const url = PUBLIC_SUPABASE_URL;
+  const anonKey = PUBLIC_SUPABASE_ANON_KEY;
+  const hasServiceRoleOnly = Boolean((HAS_PUBLIC_SERVICE_ROLE || HAS_SERVER_SERVICE_ROLE) && !anonKey);
+  const hasPublicServiceRole = HAS_PUBLIC_SERVICE_ROLE;
 
-  return { url, anonKey, configured: Boolean(url && anonKey) };
+  return {
+    url,
+    anonKey,
+    configured: Boolean(url && anonKey),
+    hasServiceRoleOnly,
+    hasPublicServiceRole,
+  };
 }
 
 export function getSupabaseBrowserClient() {

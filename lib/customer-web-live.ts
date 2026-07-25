@@ -104,6 +104,11 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function relationRow<T>(value: T | T[] | null | undefined) {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
 function formatAvailability(row: Record<string, unknown>) {
   const items = [
     row.clinic_available_time ? "Clinic" : "",
@@ -350,17 +355,21 @@ export async function fetchPatientAppointments(patientId: string) {
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data || []).map((row) => ({
+  return (data || []).map((row) => {
+    const doctor = relationRow(row.doctor);
+
+    return {
     id: row.id,
     status: text(row.status, "pending"),
     appointmentDate: text(row.appointment_date),
     appointmentTime: text(row.appointment_time),
     consultationType: text(row.consultation_type, "clinic"),
     fee: numberValue(row.fee, 0),
-    doctorName: text(row.doctor?.name, "Doctor"),
-    doctorSpecialty: text(row.doctor?.specialization, "General Physician"),
-    hospital: text(row.doctor?.hospital, "Online consultation"),
-  })) satisfies AppointmentSummary[];
+    doctorName: text(doctor?.name, "Doctor"),
+    doctorSpecialty: text(doctor?.specialization, "General Physician"),
+    hospital: text(doctor?.hospital, "Online consultation"),
+    };
+  }) satisfies AppointmentSummary[];
 }
 
 export async function fetchCustomerProfile(userId: string) {

@@ -72,7 +72,7 @@ export const serviceCards = [
 export const featuredDoctors = [
   { name: "Dr. Bhadra Asha", specialty: "Cardiologist", fee: "₹800", availability: "Video, Voice, Clinic", rating: "4.9" },
   { name: "Dr. Akshaya Murali", specialty: "Neurologist", fee: "₹1,200", availability: "Video, Clinic", rating: "4.8" },
-  { name: "Dr. Austy Doctor", specialty: "General Physician", fee: "₹500", availability: "Instant Call, Chat", rating: "4.7" },
+  { name: "Dr. Saiman Care", specialty: "General Physician", fee: "₹500", availability: "Instant Call, Chat", rating: "4.7" },
 ];
 
 export const featuredPharmacy = [
@@ -88,7 +88,7 @@ export const featuredTests = [
 ];
 
 export const featuredHospitals = [
-  { name: "Austy Multispeciality", focus: "Cardiac & critical care", price: "₹499 consult", city: "Hyderabad" },
+  { name: "Saiman Multispeciality", focus: "Cardiac & critical care", price: "₹499 consult", city: "Hyderabad" },
   { name: "Sunrise Hospital", focus: "Neuro & orthopaedic surgery", price: "₹699 consult", city: "Bangalore" },
   { name: "WellCare Medical Center", focus: "Women & child health", price: "₹549 consult", city: "Chennai" },
 ];
@@ -115,7 +115,7 @@ export const recordsSummary = [
 export const subscriptionPlans = [
   { name: "Starter Care", price: "₹799 / month", detail: "1 video consult, pharmacy savings, digital records." },
   { name: "Family Care", price: "₹1,999 / month", detail: "Multi-member coverage, more consults, ambulance priority." },
-  { name: "Austy Plus", price: "₹4,999 / year", detail: "Best-value yearly plan with care coordination perks." },
+  { name: "Saiman Plus", price: "₹4,999 / year", detail: "Best-value yearly plan with care coordination perks." },
 ];
 
 export const supportTopics = [
