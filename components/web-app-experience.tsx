@@ -139,6 +139,13 @@ const tonePalette = [
   "linear-gradient(180deg, #ecfeff 0%, #ffffff 100%)",
 ];
 
+const APP_FALLBACK_IMAGES = {
+  hospital: "https://images.unsplash.com/photo-1538108149393-fbbd81895907?auto=format&fit=crop&w=1200&q=80",
+  lab: "https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1200&q=80",
+  pharmacy: "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80",
+  careTeam: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=1200&q=80",
+} as const;
+
 function toneFromSeed(seed: string) {
   const key = seed.trim().toLowerCase();
   const total = Array.from(key).reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -152,7 +159,6 @@ function MarketplaceImage({
   label,
   style,
   textStyle,
-  sizes = "(max-width: 1024px) 100vw, 33vw",
   fit = "cover",
 }: {
   src?: string | null;
@@ -161,7 +167,6 @@ function MarketplaceImage({
   label: string;
   style: React.CSSProperties;
   textStyle?: React.CSSProperties;
-  sizes?: string;
   fit?: "cover" | "contain";
 }) {
   const frameStyle = {
@@ -177,7 +182,17 @@ function MarketplaceImage({
   if (imageSrc) {
     return (
       <div style={frameStyle}>
-        <Image src={imageSrc} alt={alt} fill sizes={sizes} style={{ objectFit: fit }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imageSrc}
+          alt={alt}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: fit,
+            display: "block",
+          }}
+        />
       </div>
     );
   }
@@ -205,7 +220,6 @@ function DoctorImage({
       label={getInitials(doctor.name)}
       style={style}
       textStyle={textStyle}
-      sizes="(max-width: 1024px) 50vw, 180px"
     />
   );
 }
@@ -1084,7 +1098,7 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
     <div style={styles.productCard}>
       <MarketplaceImage
         src={product.imageUrl}
-        fallbackSrc="/service-pharmacy.svg"
+        fallbackSrc={APP_FALLBACK_IMAGES.pharmacy}
         alt={product.name}
         label={getInitials(product.name)}
         style={{ ...styles.productVisual, background: product.tone }}
@@ -1224,7 +1238,7 @@ export function WebLabTestsScreen() {
           <div key={test.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={test.imageUrl}
-              fallbackSrc="/service-lab.svg"
+              fallbackSrc={APP_FALLBACK_IMAGES.lab}
               alt={test.name}
               label={getInitials(test.name)}
               style={styles.tileVisual}
@@ -1289,7 +1303,7 @@ export function WebHospitalsScreen() {
           <div key={service.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
-              fallbackSrc="/service-hospital.svg"
+              fallbackSrc={APP_FALLBACK_IMAGES.hospital}
               alt={service.serviceName}
               label={getInitials(service.serviceName)}
               style={styles.tileVisual}
@@ -1557,7 +1571,7 @@ export function WebCareStaffScreen() {
           <div key={item.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.avatarUrl}
-              fallbackSrc="/service-staff.svg"
+              fallbackSrc={APP_FALLBACK_IMAGES.careTeam}
               alt={item.name}
               label={getInitials(item.name)}
               style={styles.staffVisual}
@@ -1885,7 +1899,7 @@ export function WebPharmacyCartScreen() {
             <div key={line.product.id} style={styles.cartLine}>
               <MarketplaceImage
                 src={line.product.imageUrl}
-                fallbackSrc="/service-pharmacy.svg"
+                fallbackSrc={APP_FALLBACK_IMAGES.pharmacy}
                 alt={line.product.name}
                 label={getInitials(line.product.name)}
                 style={{ ...styles.cartImage, background: line.product.tone }}

@@ -1,6 +1,8 @@
 grant usage on schema public to anon;
 
 grant select on public.users to anon;
+grant select on public.pharmacy_catalog_items to anon;
+grant select on public.pharmacy_product_approvals to anon;
 grant select on public.lab_test_catalog to anon;
 grant select on public.hospital_service_catalog to anon;
 grant select on public.ctmri_service_catalog to anon;
@@ -39,6 +41,13 @@ for select
 to anon
 using (is_active = true);
 
+drop policy if exists "Anonymous users can read active pharmacy catalog items" on public.pharmacy_catalog_items;
+create policy "Anonymous users can read active pharmacy catalog items"
+on public.pharmacy_catalog_items
+for select
+to anon
+using (is_active = true);
+
 drop policy if exists "Anonymous users can read active hospital service catalog" on public.hospital_service_catalog;
 create policy "Anonymous users can read active hospital service catalog"
 on public.hospital_service_catalog
@@ -59,6 +68,16 @@ on public.lab_test_approvals
 for select
 to anon
 using (status = 'Approved');
+
+drop policy if exists "Anonymous users can read approved pharmacy products" on public.pharmacy_product_approvals;
+create policy "Anonymous users can read approved pharmacy products"
+on public.pharmacy_product_approvals
+for select
+to anon
+using (
+  status = 'Approved'
+  and coalesce(is_active, false) = true
+);
 
 drop policy if exists "Anonymous users can read approved hospital service approvals" on public.hospital_service_approvals;
 create policy "Anonymous users can read approved hospital service approvals"

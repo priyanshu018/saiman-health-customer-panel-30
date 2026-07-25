@@ -217,6 +217,7 @@ function formatAvailability(row: Record<string, unknown>) {
 type PharmacyApprovalRow = {
   id: string;
   name: string | null;
+  sku?: string | null;
   category: string | null;
   type: string | null;
   price: number | null;
@@ -228,9 +229,13 @@ type PharmacyApprovalRow = {
   image_urls?: unknown;
   pharmacy_id: string | null;
   pharmacy_name: string | null;
+  pharmacy_email?: string | null;
+  pharmacy_phone?: string | null;
   catalog_item_id: string | null;
   status: string | null;
   is_active: boolean | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export async function getCurrentCustomer() {
@@ -369,14 +374,14 @@ export async function fetchApprovedPharmacyProducts() {
 
   async function loadApprovals(includeImageUrls: boolean) {
     const select = includeImageUrls
-      ? "id,name,category,type,price,mrp,stock,city,description,image_url,image_urls,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active"
-      : "id,name,category,type,price,mrp,stock,city,description,image_url,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active";
+      ? "id,name,sku,category,type,price,mrp,stock,pharmacy_id,pharmacy_name,pharmacy_email,pharmacy_phone,city,latitude,longitude,description,image_url,image_urls,status,category_id,catalog_item_id,is_active"
+      : "id,name,sku,category,type,price,mrp,stock,pharmacy_id,pharmacy_name,pharmacy_email,pharmacy_phone,city,latitude,longitude,description,image_url,status,category_id,catalog_item_id,is_active";
 
     return supabase
-      .from("pharmacy_approvals")
+      .from("pharmacy_product_approvals")
       .select(select)
       .eq("status", "Approved")
-      .eq("is_active", true)
+      .gt("stock", 0)
       .order("name", { ascending: true });
   }
 
@@ -473,7 +478,7 @@ export async function fetchApprovedLabTests() {
             city: text(lab.city, "City pending"),
             price: numberValue(row.price, 0),
             reportTime: text(test.report_delivery_text, "24-48 hrs"),
-            imageUrl: null,
+            imageUrl: text((test as { image_url?: unknown }).image_url) || null,
           } satisfies LabTestSummary;
         })
         .filter(Boolean) as LabTestSummary[];
