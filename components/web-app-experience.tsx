@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
-import { CustomerGuard, CustomerShellAuthActions, useCustomerUser } from "@/components/customer-live";
+import { CustomerShellAuthActions, useCustomerUser } from "@/components/customer-live";
 import { primaryNav, recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
 import {
   createSupportTicket,
@@ -147,6 +147,7 @@ function toneFromSeed(seed: string) {
 
 function MarketplaceImage({
   src,
+  fallbackSrc,
   alt,
   label,
   style,
@@ -155,6 +156,7 @@ function MarketplaceImage({
   fit = "cover",
 }: {
   src?: string | null;
+  fallbackSrc?: string;
   alt: string;
   label: string;
   style: React.CSSProperties;
@@ -170,10 +172,12 @@ function MarketplaceImage({
     placeItems: "center",
   };
 
-  if (src) {
+  const imageSrc = src || fallbackSrc;
+
+  if (imageSrc) {
     return (
       <div style={frameStyle}>
-        <Image src={src} alt={alt} fill sizes={sizes} style={{ objectFit: fit }} />
+        <Image src={imageSrc} alt={alt} fill sizes={sizes} style={{ objectFit: fit }} />
       </div>
     );
   }
@@ -204,6 +208,42 @@ function DoctorImage({
       sizes="(max-width: 1024px) 50vw, 180px"
     />
   );
+}
+
+function buildAuthRedirect(nextPath: string) {
+  const safeNext = nextPath || "/";
+  return `/auth/signup?next=${encodeURIComponent(safeNext)}`;
+}
+
+function useAuthActionGuard() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, state, configured } = useCustomerUser();
+
+  function requireAuth(targetPath?: string) {
+    if (!configured) {
+      alert("Customer login is not available until Supabase env is configured.");
+      return null;
+    }
+
+    if (state.loading) {
+      return null;
+    }
+
+    if (!user) {
+      router.push(buildAuthRedirect(targetPath || pathname || "/"));
+      return null;
+    }
+
+    return user;
+  }
+
+  return {
+    user,
+    state,
+    configured,
+    requireAuth,
+  };
 }
 
 function useCart() {
@@ -409,59 +449,57 @@ function DashboardFrame({
   const { user } = useCustomerUser();
 
   return (
-    <CustomerGuard>
-      <div style={styles.shell}>
-        <aside style={styles.sidebar}>
-          <Link href="/" style={styles.brandWrap}>
-            <span style={styles.brandMark}>✚</span>
-            <div>
-              <strong style={styles.brandTitle}>Austy Healthcare</strong>
-              <small style={styles.brandSub}>Customer web app</small>
-            </div>
-          </Link>
-
-          <nav style={styles.navList}>
-            {primaryNav.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link key={item.href} href={item.href} style={{ ...styles.navItem, ...(active ? styles.navItemActive : {}) }}>
-                  <span style={styles.navItemShort}>{item.short}</span>
-                  <small style={styles.navItemLabel}>{item.label}</small>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div style={styles.sidebarPromo}>
-            <span style={styles.sidebarPromoTag}>LIVE SUPPORT</span>
-            <h3 style={styles.sidebarPromoTitle}>Need urgent medical guidance?</h3>
-            <p style={styles.sidebarPromoCopy}>Start the same instant-call flow from the app, now optimized for web.</p>
-            <Link href="/instant-call" style={styles.sidebarPromoButton}>Start Instant Call</Link>
+    <div style={styles.shell}>
+      <aside style={styles.sidebar}>
+        <Link href="/" style={styles.brandWrap}>
+          <span style={styles.brandMark}>✚</span>
+          <div>
+            <strong style={styles.brandTitle}>Austy Healthcare</strong>
+            <small style={styles.brandSub}>Customer web app</small>
           </div>
-        </aside>
+        </Link>
 
-        <main style={styles.mainArea}>
-          <header style={styles.topbar}>
-            <div>
-              <div style={styles.pageEyebrow}>Saiman Customer Experience</div>
-              <h1 style={styles.pageTitle}>{title}</h1>
-              <p style={styles.pageSubtitle}>{subtitle}</p>
-            </div>
-            <div style={styles.topbarRight}>
-              {accent}
-              <div style={styles.topbarAccount}>
-                <div style={styles.accountMeta}>
-                  <strong>{user?.name || "Customer"}</strong>
-                  <span>{user?.email || "Signed in"}</span>
-                </div>
-                <CustomerShellAuthActions />
+        <nav style={styles.navList}>
+          {primaryNav.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href} style={{ ...styles.navItem, ...(active ? styles.navItemActive : {}) }}>
+                <span style={styles.navItemShort}>{item.short}</span>
+                <small style={styles.navItemLabel}>{item.label}</small>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div style={styles.sidebarPromo}>
+          <span style={styles.sidebarPromoTag}>LIVE SUPPORT</span>
+          <h3 style={styles.sidebarPromoTitle}>Need urgent medical guidance?</h3>
+          <p style={styles.sidebarPromoCopy}>Start the same instant-call flow from the app, now optimized for web.</p>
+          <Link href="/instant-call" style={styles.sidebarPromoButton}>Start Instant Call</Link>
+        </div>
+      </aside>
+
+      <main style={styles.mainArea}>
+        <header style={styles.topbar}>
+          <div>
+            <div style={styles.pageEyebrow}>Saiman Customer Experience</div>
+            <h1 style={styles.pageTitle}>{title}</h1>
+            <p style={styles.pageSubtitle}>{subtitle}</p>
+          </div>
+          <div style={styles.topbarRight}>
+            {accent}
+            <div style={styles.topbarAccount}>
+              <div style={styles.accountMeta}>
+                <strong>{user?.name || "Guest Customer"}</strong>
+                <span>{user?.email || "Browse first, sign up when you book"}</span>
               </div>
+              <CustomerShellAuthActions />
             </div>
-          </header>
-          <section style={styles.mainContent}>{children}</section>
-        </main>
-      </div>
-    </CustomerGuard>
+          </div>
+        </header>
+        <section style={styles.mainContent}>{children}</section>
+      </main>
+    </div>
   );
 }
 
@@ -537,15 +575,25 @@ export function WebHomeScreen() {
               tag: "Doctor Consult",
               title: "When should you consult a doctor online?",
               detail: "Video consults are useful for follow-ups, common symptoms, and quick medical guidance.",
+              image: "/blog-doctor-consult.svg",
             },
             {
               tag: "Pharmacy",
               title: "Medicine delivery safety tips",
               detail: "Check dosage, expiry date, and packaging when your medicines arrive.",
+              image: "/blog-pharmacy-safety.svg",
             },
           ].map((item) => (
             <div key={item.title} style={styles.blogRow}>
-              <div style={styles.blogVisual} />
+              <div style={styles.blogVisual}>
+                <Image
+                  src={item.image}
+                  alt={item.title}
+                  fill
+                  sizes="160px"
+                  style={{ objectFit: "cover" }}
+                />
+              </div>
               <div>
                 <span style={styles.blogTag}>{item.tag}</span>
                 <h3 style={styles.blogTitle}>{item.title}</h3>
@@ -659,7 +707,7 @@ export function WebDoctorsScreen() {
 }
 
 export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
-  const { user } = useCustomerUser();
+  const { requireAuth } = useAuthActionGuard();
   const [doctor, setDoctor] = useState<DoctorSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<"single" | "monthly" | "yearly">("single");
@@ -672,7 +720,9 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   }, [doctorId]);
 
   async function handleContinue() {
-    if (!doctor || !user) return;
+    if (!doctor) return;
+    const user = requireAuth(`/doctors/${doctor.id}`);
+    if (!user) return;
     if (!getCallServerBase()) {
       alert("NEXT_PUBLIC_CALL_SERVER_URL is missing for Razorpay checkout.");
       return;
@@ -812,7 +862,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
 }
 
 export function WebInstantCallScreen() {
-  const { user } = useCustomerUser();
+  const { user, requireAuth } = useAuthActionGuard();
   const [specialty, setSpecialty] = useState("General Physician");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -827,6 +877,8 @@ export function WebInstantCallScreen() {
   }, [user]);
 
   async function submit() {
+    const authUser = requireAuth("/instant-call");
+    if (!authUser) return;
     setSubmitting(true);
     try {
       await requestInstantCall({
@@ -835,8 +887,8 @@ export function WebInstantCallScreen() {
         notes,
         preferredLanguage: "English",
       });
-      if (user) {
-        const next = await fetchActiveInstantCallRequest(user.id);
+      if (authUser) {
+        const next = await fetchActiveInstantCallRequest(authUser.id);
         if (next) {
           setRequest({ status: next.status, specialty: next.specialty, callReason: next.callReason });
         }
@@ -1018,13 +1070,21 @@ function mapPharmacyProduct(product: PharmacyProductSummary): DemoPharmacyProduc
 }
 
 function ProductCard({ product }: { product: DemoPharmacyProduct }) {
+  const { requireAuth } = useAuthActionGuard();
   const cart = useCart();
   const line = cart.lines.find((item) => item.product.id === product.id);
+
+  function handleAdd() {
+    const user = requireAuth("/pharmacy");
+    if (!user) return;
+    addProductToCart(product);
+  }
 
   return (
     <div style={styles.productCard}>
       <MarketplaceImage
         src={product.imageUrl}
+        fallbackSrc="/service-pharmacy.svg"
         alt={product.name}
         label={getInitials(product.name)}
         style={{ ...styles.productVisual, background: product.tone }}
@@ -1042,10 +1102,10 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
         <div style={styles.quantityBox}>
           <button style={styles.quantityButton} onClick={() => decrementProduct(product.id)}>−</button>
           <span>{line.quantity}</span>
-          <button style={styles.quantityButton} onClick={() => addProductToCart(product)}>+</button>
+          <button style={styles.quantityButton} onClick={handleAdd}>+</button>
         </div>
       ) : (
-        <button style={styles.primaryAction} onClick={() => addProductToCart(product)}>Add to Cart</button>
+        <button style={styles.primaryAction} onClick={handleAdd}>Add to Cart</button>
       )}
     </div>
   );
@@ -1162,6 +1222,14 @@ export function WebLabTestsScreen() {
       <div style={styles.serviceTileGrid}>
         {filtered.map((test) => (
           <div key={test.id} style={styles.infoTileCard}>
+            <MarketplaceImage
+              src={test.imageUrl}
+              fallbackSrc="/service-lab.svg"
+              alt={test.name}
+              label={getInitials(test.name)}
+              style={styles.tileVisual}
+              textStyle={styles.visualInitials}
+            />
             <span style={styles.blogTag}>{test.category}</span>
             <h3 style={styles.tileTitle}>{test.name}</h3>
             <p style={styles.tileCopy}>{test.labName}</p>
@@ -1221,6 +1289,7 @@ export function WebHospitalsScreen() {
           <div key={service.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
+              fallbackSrc="/service-hospital.svg"
               alt={service.serviceName}
               label={getInitials(service.serviceName)}
               style={styles.tileVisual}
@@ -1292,6 +1361,7 @@ export function WebCtmriScreen() {
           <div key={service.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
+              fallbackSrc="/service-ctmri.svg"
               alt={service.serviceName}
               label={getInitials(service.serviceName)}
               style={styles.tileVisual}
@@ -1359,6 +1429,7 @@ export function WebRentalEquipmentScreen() {
           <div key={item.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.imageUrl}
+              fallbackSrc="/service-rental.svg"
               alt={item.name}
               label={getInitials(item.name)}
               style={styles.tileVisual}
@@ -1388,6 +1459,15 @@ export function WebRentalEquipmentScreen() {
 }
 
 export function WebHealthCardScreen() {
+  const router = useRouter();
+  const { requireAuth } = useAuthActionGuard();
+
+  function handlePlanView() {
+    const user = requireAuth("/health-card");
+    if (!user) return;
+    router.push("/subscription-plans");
+  }
+
   return (
     <DashboardFrame title="Health Card" subtitle="Review customer plans, document readiness, and health-card style member benefits from a dedicated web entry point.">
       <section style={styles.heroWideCard}>
@@ -1408,7 +1488,7 @@ export function WebHealthCardScreen() {
                 <h3 style={styles.tileTitle}>{plan.name}</h3>
                 <div style={styles.membershipPrice}>{plan.price}</div>
                 <p style={styles.tileCopy}>{plan.detail}</p>
-                <Link href="/subscription-plans" style={styles.primaryActionLink}>View Plan</Link>
+                <button type="button" onClick={handlePlanView} style={styles.primaryAction}>View Plan</button>
               </div>
             ))}
           </div>
@@ -1477,6 +1557,7 @@ export function WebCareStaffScreen() {
           <div key={item.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.avatarUrl}
+              fallbackSrc="/service-staff.svg"
               alt={item.name}
               label={getInitials(item.name)}
               style={styles.staffVisual}
@@ -1571,6 +1652,8 @@ export function WebRecordsScreen() {
 }
 
 export function WebSubscriptionPlansScreen() {
+  const { requireAuth } = useAuthActionGuard();
+
   return (
     <DashboardFrame title="Subscription Plans" subtitle="Explore bundled health-card style plans and member benefits in the same service family as the app.">
       <section style={styles.sectionBlock}>
@@ -1584,7 +1667,15 @@ export function WebSubscriptionPlansScreen() {
               <h3 style={styles.tileTitle}>{plan.name}</h3>
               <div style={styles.membershipPrice}>{plan.price}</div>
               <p style={styles.tileCopy}>{plan.detail}</p>
-              <button style={styles.primaryAction}>Choose Plan</button>
+              <button
+                type="button"
+                style={styles.primaryAction}
+                onClick={() => {
+                  requireAuth("/subscription-plans");
+                }}
+              >
+                Choose Plan
+              </button>
             </div>
           ))}
         </div>
@@ -1594,7 +1685,7 @@ export function WebSubscriptionPlansScreen() {
 }
 
 export function WebSupportScreen() {
-  const { user, state: authState, configured } = useCustomerUser();
+  const { user, state: authState, configured, requireAuth } = useAuthActionGuard();
   const [tickets, setTickets] = useState<SupportTicketSummary[] | null>(null);
   const [subject, setSubject] = useState("");
   const [category, setCategory] = useState("Booking help");
@@ -1627,18 +1718,19 @@ export function WebSupportScreen() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!user) return;
+    const authUser = requireAuth("/support");
+    if (!authUser) return;
 
     setSubmitState({ loading: true, message: "", error: "" });
     try {
       await createSupportTicket({
-        userId: user.id,
-        userEmail: user.email,
+        userId: authUser.id,
+        userEmail: authUser.email,
         subject,
         category,
         message,
       });
-      const refreshed = await fetchSupportTickets(user.id);
+      const refreshed = await fetchSupportTickets(authUser.id);
       setTickets(refreshed);
       setSubject("");
       setMessage("");
@@ -1731,11 +1823,13 @@ export function WebSupportScreen() {
 
 export function WebPharmacyCartScreen() {
   const cart = useCart();
-  const { user } = useCustomerUser();
+  const { requireAuth } = useAuthActionGuard();
   const [submitting, setSubmitting] = useState(false);
 
   async function handleCheckout() {
-    if (!cart.lines.length || !user) return;
+    if (!cart.lines.length) return;
+    const user = requireAuth("/pharmacy/cart");
+    if (!user) return;
     if (!getCallServerBase()) {
       alert("NEXT_PUBLIC_CALL_SERVER_URL is missing for Razorpay checkout.");
       return;
@@ -1791,6 +1885,7 @@ export function WebPharmacyCartScreen() {
             <div key={line.product.id} style={styles.cartLine}>
               <MarketplaceImage
                 src={line.product.imageUrl}
+                fallbackSrc="/service-pharmacy.svg"
                 alt={line.product.name}
                 label={getInitials(line.product.name)}
                 style={{ ...styles.cartImage, background: line.product.tone }}
@@ -2438,6 +2533,8 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 132,
     borderRadius: 22,
     background: "linear-gradient(135deg, #cbd8ff, #f7f9ff)",
+    position: "relative",
+    overflow: "hidden",
   },
   blogTag: {
     display: "inline-flex",

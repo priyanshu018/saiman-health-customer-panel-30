@@ -52,6 +52,7 @@ export type LabTestSummary = {
   city: string;
   price: number;
   reportTime: string;
+  imageUrl: string | null;
 };
 
 export type HospitalSummary = {
@@ -213,6 +214,25 @@ function formatAvailability(row: Record<string, unknown>) {
   return items.length ? items : ["Consultation"];
 }
 
+type PharmacyApprovalRow = {
+  id: string;
+  name: string | null;
+  category: string | null;
+  type: string | null;
+  price: number | null;
+  mrp: number | null;
+  stock: number | null;
+  city: string | null;
+  description: string | null;
+  image_url: string | null;
+  image_urls?: unknown;
+  pharmacy_id: string | null;
+  pharmacy_name: string | null;
+  catalog_item_id: string | null;
+  status: string | null;
+  is_active: boolean | null;
+};
+
 export async function getCurrentCustomer() {
   const supabase = client();
   const { data, error } = await supabase.auth.getUser();
@@ -347,16 +367,28 @@ export async function fetchApprovedPharmacies() {
 export async function fetchApprovedPharmacyProducts() {
   const supabase = client();
 
-  const current = await supabase
-    .from("pharmacy_approvals")
-    .select("id,name,category,type,price,mrp,stock,city,description,image_url,image_urls,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active")
-    .eq("status", "Approved")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+  async function loadApprovals(includeImageUrls: boolean) {
+    const select = includeImageUrls
+      ? "id,name,category,type,price,mrp,stock,city,description,image_url,image_urls,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active"
+      : "id,name,category,type,price,mrp,stock,city,description,image_url,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active";
+
+    return supabase
+      .from("pharmacy_approvals")
+      .select(select)
+      .eq("status", "Approved")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+  }
+
+  let current = await loadApprovals(true);
+
+  if (current.error && String(current.error.message || "").toLowerCase().includes("image_urls")) {
+    current = await loadApprovals(false);
+  }
 
   if (current.error) throw new Error(current.error.message);
 
-  const rows = current.data || [];
+  const rows = ((current.data || []) as unknown) as PharmacyApprovalRow[];
   const catalogIds = Array.from(new Set(rows.map((row) => row.catalog_item_id).filter(Boolean)));
   const catalogImages = new Map<string, string[]>();
 
@@ -388,6 +420,7 @@ export async function fetchApprovedPharmacyProducts() {
     city: text(row.city, "City pending"),
     imageUrl:
       text(row.image_url) ||
+      toStringArray((row as { image_urls?: unknown }).image_urls)[0] ||
       (row.catalog_item_id ? catalogImages.get(row.catalog_item_id)?.[0] || null : null),
   })) satisfies PharmacyProductSummary[];
 }
@@ -405,50 +438,53 @@ export async function fetchApprovedLabTests() {
     const catalogIds = [...new Set(approvalRows.map((row) => row.catalog_test_id).filter(Boolean))];
     const labIds = [...new Set(approvalRows.map((row) => row.lab_id).filter(Boolean))];
 
-    if (!catalogIds.length) return [] satisfies LabTestSummary[];
+    if (catalogIds.length) {
+      const [catalog, labs] = await Promise.all([
+        supabase
+          .from("lab_test_catalog")
+          .select("id,name,category,report_delivery_text")
+          .in("id", catalogIds)
+          .eq("is_active", true),
+        supabase
+          .from("users")
+          .select("id,lab_name,city")
+          .in("id", labIds)
+          .eq("role", "lab")
+          .eq("verification_status", "approved"),
+      ]);
 
-    const [catalog, labs] = await Promise.all([
-      supabase
-        .from("lab_test_catalog")
-        .select("id,name,category,report_delivery_text")
-        .in("id", catalogIds)
-        .eq("is_active", true),
-      supabase
-        .from("users")
-        .select("id,lab_name,city")
-        .in("id", labIds)
-        .eq("role", "lab")
-        .eq("verification_status", "approved"),
-    ]);
+      if (catalog.error) throw new Error(catalog.error.message);
+      if (labs.error) throw new Error(labs.error.message);
 
-    if (catalog.error) throw new Error(catalog.error.message);
-    if (labs.error) throw new Error(labs.error.message);
+      const catalogById = new Map((catalog.data || []).map((row) => [row.id, row]));
+      const labById = new Map((labs.data || []).map((row) => [row.id, row]));
 
-    const catalogById = new Map((catalog.data || []).map((row) => [row.id, row]));
-    const labById = new Map((labs.data || []).map((row) => [row.id, row]));
+      const currentResults = approvalRows
+        .map((row) => {
+          const test = row.catalog_test_id ? catalogById.get(row.catalog_test_id) : null;
+          const lab = row.lab_id ? labById.get(row.lab_id) : null;
+          if (!test || !lab) return null;
 
-    return approvalRows
-      .map((row) => {
-        const test = row.catalog_test_id ? catalogById.get(row.catalog_test_id) : null;
-        const lab = row.lab_id ? labById.get(row.lab_id) : null;
-        if (!test || !lab) return null;
+          return {
+            id: row.id,
+            name: text(test.name, "Lab Test"),
+            category: text(test.category, "General"),
+            labName: text(lab.lab_name, "Approved Lab"),
+            city: text(lab.city, "City pending"),
+            price: numberValue(row.price, 0),
+            reportTime: text(test.report_delivery_text, "24-48 hrs"),
+            imageUrl: null,
+          } satisfies LabTestSummary;
+        })
+        .filter(Boolean) as LabTestSummary[];
 
-        return {
-          id: row.id,
-          name: text(test.name, "Lab Test"),
-          category: text(test.category, "General"),
-          labName: text(lab.lab_name, "Approved Lab"),
-          city: text(lab.city, "City pending"),
-          price: numberValue(row.price, 0),
-          reportTime: text(test.report_delivery_text, "24-48 hrs"),
-        } satisfies LabTestSummary;
-      })
-      .filter(Boolean) as LabTestSummary[];
+      if (currentResults.length) return currentResults;
+    }
   }
 
   const legacyQuery = await supabase
     .from("lab_test_approvals")
-    .select("id,test_name,category,lab_name,city,price,report_time")
+    .select("id,test_name,category,lab_name,city,price,report_time,image_url")
     .eq("status", "Approved")
     .eq("is_active", true)
     .order("test_name", { ascending: true });
@@ -463,6 +499,7 @@ export async function fetchApprovedLabTests() {
     city: text(row.city, "City pending"),
     price: numberValue(row.price, 0),
     reportTime: text(row.report_time, "24-48 hrs"),
+    imageUrl: text((row as { image_url?: unknown }).image_url) || null,
   })) satisfies LabTestSummary[];
 }
 

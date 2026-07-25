@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CustomerGuard, CustomerShellAuthActions } from "@/components/customer-live";
+import { CustomerShellAuthActions } from "@/components/customer-live";
 import { primaryNav } from "@/lib/customer-web-data";
 
 type CustomerShellProps = {
@@ -16,53 +16,51 @@ export function CustomerShell({ title, subtitle, children, actions }: CustomerSh
   const pathname = usePathname();
 
   return (
-    <CustomerGuard>
-      <div className="customer-shell">
-        <aside className="customer-sidebar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-badge">SH</span>
-            <div>
-              <strong>Saiman Health</strong>
-              <small>Customer Care Portal</small>
-            </div>
-          </Link>
-
-          <nav className="customer-nav">
-            {primaryNav.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link key={item.href} href={item.href} className={`customer-nav-link${active ? " active" : ""}`}>
-                  <span>{item.short}</span>
-                  <small>{item.label}</small>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="sidebar-card">
-            <p>Need urgent guidance from a doctor?</p>
-            <Link href="/instant-call" className="sidebar-cta">
-              Start Instant Call
-            </Link>
+    <div className="customer-shell">
+      <aside className="customer-sidebar">
+        <Link href="/" className="brand-lockup">
+          <span className="brand-badge">SH</span>
+          <div>
+            <strong>Saiman Health</strong>
+            <small>Customer Care Portal</small>
           </div>
-        </aside>
+        </Link>
 
-        <div className="customer-main">
-          <header className="customer-header">
-            <div>
-              <p className="eyebrow">Saiman Healthcare Platform</p>
-              <h1>{title}</h1>
-              <p className="subtitle">{subtitle}</p>
-            </div>
-            <div className="header-actions">
-              <CustomerShellAuthActions />
-              {actions}
-            </div>
-          </header>
+        <nav className="customer-nav">
+          {primaryNav.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href} className={`customer-nav-link${active ? " active" : ""}`}>
+                <span>{item.short}</span>
+                <small>{item.label}</small>
+              </Link>
+            );
+          })}
+        </nav>
 
-          <main className="customer-content">{children}</main>
+        <div className="sidebar-card">
+          <p>Need urgent guidance from a doctor?</p>
+          <Link href="/instant-call" className="sidebar-cta">
+            Start Instant Call
+          </Link>
         </div>
+      </aside>
+
+      <div className="customer-main">
+        <header className="customer-header">
+          <div>
+            <p className="eyebrow">Saiman Healthcare Platform</p>
+            <h1>{title}</h1>
+            <p className="subtitle">{subtitle}</p>
+          </div>
+          <div className="header-actions">
+            <CustomerShellAuthActions />
+            {actions}
+          </div>
+        </header>
+
+        <main className="customer-content">{children}</main>
       </div>
-    </CustomerGuard>
+    </div>
   );
 }
