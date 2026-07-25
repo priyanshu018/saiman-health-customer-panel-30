@@ -29,6 +29,21 @@ export type PharmacySummary = {
   rating: number;
 };
 
+export type PharmacyProductSummary = {
+  id: string;
+  name: string;
+  category: string;
+  subtitle: string;
+  description: string;
+  price: number;
+  mrp: number | null;
+  stock: number;
+  pharmacyId: string | null;
+  pharmacyName: string;
+  city: string;
+  imageUrl: string | null;
+};
+
 export type LabTestSummary = {
   id: string;
   name: string;
@@ -45,6 +60,63 @@ export type HospitalSummary = {
   address: string;
   city: string;
   totalBeds: number | null;
+};
+
+export type HospitalServiceSummary = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerAddress: string;
+  providerCity: string;
+  serviceName: string;
+  category: string;
+  description: string;
+  price: number;
+  basePrice: number;
+  imageUrl: string | null;
+  totalBeds: number | null;
+};
+
+export type CtmriServiceSummary = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerAddress: string;
+  providerCity: string;
+  serviceName: string;
+  category: string;
+  description: string;
+  price: number;
+  basePrice: number;
+  imageUrl: string | null;
+};
+
+export type RentalEquipmentSummary = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  brand: string;
+  model: string;
+  price: number;
+  weeklyPrice: number;
+  monthlyPrice: number;
+  deposit: number;
+  providerName: string;
+  city: string;
+  stock: number;
+  imageUrl: string | null;
+};
+
+export type StaffingProviderSummary = {
+  id: string;
+  name: string;
+  city: string;
+  profession: string;
+  experience: number | null;
+  fee: number | null;
+  qualifications: string;
+  avatarUrl: string | null;
 };
 
 export type AppointmentSummary = {
@@ -108,6 +180,26 @@ function numberValue(value: unknown, fallback = 0) {
 function relationRow<T>(value: T | T[] | null | undefined) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return toStringArray(parsed);
+    } catch {
+      return [trimmed];
+    }
+  }
+
+  return [];
 }
 
 function formatAvailability(row: Record<string, unknown>) {
@@ -252,6 +344,54 @@ export async function fetchApprovedPharmacies() {
   })) satisfies PharmacySummary[];
 }
 
+export async function fetchApprovedPharmacyProducts() {
+  const supabase = client();
+
+  const current = await supabase
+    .from("pharmacy_approvals")
+    .select("id,name,category,type,price,mrp,stock,city,description,image_url,image_urls,pharmacy_id,pharmacy_name,catalog_item_id,status,is_active")
+    .eq("status", "Approved")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  if (current.error) throw new Error(current.error.message);
+
+  const rows = current.data || [];
+  const catalogIds = Array.from(new Set(rows.map((row) => row.catalog_item_id).filter(Boolean)));
+  const catalogImages = new Map<string, string[]>();
+
+  if (catalogIds.length) {
+    const catalog = await supabase
+      .from("pharmacy_catalog_items")
+      .select("id,image_urls")
+      .in("id", catalogIds);
+
+    if (!catalog.error) {
+      for (const row of catalog.data || []) {
+        const images = toStringArray(row.image_urls);
+        if (row.id && images.length) catalogImages.set(row.id, images);
+      }
+    }
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: text(row.name, "Product"),
+    category: text(row.category, "General"),
+    subtitle: text(row.type, "Medicine"),
+    description: text(row.description),
+    price: numberValue(row.price, 0),
+    mrp: row.mrp == null ? null : numberValue(row.mrp, 0),
+    stock: numberValue(row.stock, 0),
+    pharmacyId: row.pharmacy_id || null,
+    pharmacyName: text(row.pharmacy_name, "Austy Pharmacy"),
+    city: text(row.city, "City pending"),
+    imageUrl:
+      text(row.image_url) ||
+      (row.catalog_item_id ? catalogImages.get(row.catalog_item_id)?.[0] || null : null),
+  })) satisfies PharmacyProductSummary[];
+}
+
 export async function fetchApprovedLabTests() {
   const supabase = client();
   const currentQuery = await supabase
@@ -343,6 +483,173 @@ export async function fetchApprovedHospitals() {
     city: text(row.city, "City pending"),
     totalBeds: row.total_beds == null ? null : numberValue(row.total_beds),
   })) satisfies HospitalSummary[];
+}
+
+async function fetchProviderServiceCatalogRows(table: string, ids: string[]) {
+  const supabase = client();
+  return supabase
+    .from(table)
+    .select("id,name,code,category,description,base_price,image_url,is_active")
+    .in("id", ids)
+    .eq("is_active", true);
+}
+
+export async function fetchApprovedHospitalServices() {
+  const supabase = client();
+  const approvals = await supabase
+    .from("hospital_service_approvals")
+    .select("id,provider_id,catalog_service_id,price,status")
+    .eq("status", "Approved")
+    .order("updated_at", { ascending: false });
+
+  if (approvals.error) throw new Error(approvals.error.message);
+  const rows = approvals.data || [];
+  if (!rows.length) return [] satisfies HospitalServiceSummary[];
+
+  const providerIds = Array.from(new Set(rows.map((row) => row.provider_id).filter(Boolean)));
+  const catalogIds = Array.from(new Set(rows.map((row) => row.catalog_service_id).filter(Boolean)));
+
+  const [providers, catalog] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id,name,city,hospital_name,hospital_address,total_beds,verification_status")
+      .in("id", providerIds)
+      .eq("role", "hospital")
+      .eq("verification_status", "approved"),
+    fetchProviderServiceCatalogRows("hospital_service_catalog", catalogIds),
+  ]);
+
+  if (providers.error) throw new Error(providers.error.message);
+  if (catalog.error) throw new Error(catalog.error.message);
+
+  const providerById = new Map((providers.data || []).map((row) => [row.id, row]));
+  const catalogById = new Map((catalog.data || []).map((row) => [row.id, row]));
+
+  return rows
+    .map((row) => {
+      const provider = providerById.get(row.provider_id);
+      const service = catalogById.get(row.catalog_service_id);
+      if (!provider || !service) return null;
+
+      return {
+        id: row.id,
+        providerId: row.provider_id,
+        providerName: text(provider.hospital_name, text(provider.name, "Hospital")),
+        providerAddress: text(provider.hospital_address, "Address available after booking"),
+        providerCity: text(provider.city, "City pending"),
+        serviceName: text(service.name, "Hospital Service"),
+        category: text(service.category, "General"),
+        description: text(service.description),
+        price: numberValue(row.price, numberValue(service.base_price, 0)),
+        basePrice: numberValue(service.base_price, 0),
+        imageUrl: text(service.image_url) || null,
+        totalBeds: provider.total_beds == null ? null : numberValue(provider.total_beds),
+      } satisfies HospitalServiceSummary;
+    })
+    .filter(Boolean) as HospitalServiceSummary[];
+}
+
+export async function fetchApprovedCtmriServices() {
+  const supabase = client();
+  const approvals = await supabase
+    .from("ctmri_service_approvals")
+    .select("id,provider_id,catalog_service_id,price,status")
+    .eq("status", "Approved")
+    .order("updated_at", { ascending: false });
+
+  if (approvals.error) throw new Error(approvals.error.message);
+  const rows = approvals.data || [];
+  if (!rows.length) return [] satisfies CtmriServiceSummary[];
+
+  const providerIds = Array.from(new Set(rows.map((row) => row.provider_id).filter(Boolean)));
+  const catalogIds = Array.from(new Set(rows.map((row) => row.catalog_service_id).filter(Boolean)));
+
+  const [providers, catalog] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id,name,city,center_name,center_address,verification_status")
+      .in("id", providerIds)
+      .eq("role", "ctmri")
+      .eq("verification_status", "approved"),
+    fetchProviderServiceCatalogRows("ctmri_service_catalog", catalogIds),
+  ]);
+
+  if (providers.error) throw new Error(providers.error.message);
+  if (catalog.error) throw new Error(catalog.error.message);
+
+  const providerById = new Map((providers.data || []).map((row) => [row.id, row]));
+  const catalogById = new Map((catalog.data || []).map((row) => [row.id, row]));
+
+  return rows
+    .map((row) => {
+      const provider = providerById.get(row.provider_id);
+      const service = catalogById.get(row.catalog_service_id);
+      if (!provider || !service) return null;
+
+      return {
+        id: row.id,
+        providerId: row.provider_id,
+        providerName: text(provider.center_name, text(provider.name, "Imaging Center")),
+        providerAddress: text(provider.center_address, "Address available after booking"),
+        providerCity: text(provider.city, "City pending"),
+        serviceName: text(service.name, "Imaging Service"),
+        category: text(service.category, "General"),
+        description: text(service.description),
+        price: numberValue(row.price, numberValue(service.base_price, 0)),
+        basePrice: numberValue(service.base_price, 0),
+        imageUrl: text(service.image_url) || null,
+      } satisfies CtmriServiceSummary;
+    })
+    .filter(Boolean) as CtmriServiceSummary[];
+}
+
+export async function fetchApprovedRentalEquipment() {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("rental_equipment_approvals")
+    .select("id,name,category,owner,city,price,weekly_price,monthly_price,deposit,brand,model,description,image_url,stock,status")
+    .eq("status", "Approved")
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: text(row.name, "Equipment"),
+    category: text(row.category, "Patient Care"),
+    description: text(row.description),
+    brand: text(row.brand),
+    model: text(row.model),
+    price: numberValue(row.price, 0),
+    weeklyPrice: numberValue(row.weekly_price, numberValue(row.price, 0) * 7),
+    monthlyPrice: numberValue(row.monthly_price, numberValue(row.price, 0) * 30),
+    deposit: numberValue(row.deposit, 0),
+    providerName: text(row.owner, "Verified Provider"),
+    city: text(row.city, "City pending"),
+    stock: numberValue(row.stock, 0),
+    imageUrl: text(row.image_url) || null,
+  })) satisfies RentalEquipmentSummary[];
+}
+
+export async function fetchApprovedStaffingProviders() {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,name,city,provider_subtype,experience,fee,qualifications,avatar_url,verification_status")
+    .eq("role", "staffing")
+    .eq("verification_status", "approved")
+    .order("updated_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: text(row.name, "Verified Staff"),
+    city: text(row.city, "City pending"),
+    profession: text(row.provider_subtype, "Care Staff"),
+    experience: row.experience == null ? null : numberValue(row.experience),
+    fee: row.fee == null ? null : numberValue(row.fee),
+    qualifications: text(row.qualifications),
+    avatarUrl: text(row.avatar_url) || null,
+  })) satisfies StaffingProviderSummary[];
 }
 
 export async function fetchPatientAppointments(patientId: string) {

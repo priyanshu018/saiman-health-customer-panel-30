@@ -11,6 +11,9 @@ export type DemoPharmacyProduct = {
   inStock: number;
   tone: string;
   accent: string;
+  imageUrl?: string | null;
+  pharmacyId?: string | null;
+  city?: string;
 };
 
 export type PharmacyCartLine = {
@@ -53,6 +56,7 @@ const CART_KEY = "saiman-web-cart-v1";
 const BOOKINGS_KEY = "saiman-web-bookings-v1";
 const ORDERS_KEY = "saiman-web-orders-v1";
 const STORE_EVENT = "saiman-web-store-change";
+const dynamicProducts = new Map<string, DemoPharmacyProduct>();
 
 export const DEMO_PHARMACY_PRODUCTS: DemoPharmacyProduct[] = [
   {
@@ -104,6 +108,10 @@ export const DEMO_PHARMACY_PRODUCTS: DemoPharmacyProduct[] = [
     accent: "#2f59ff",
   },
 ];
+
+for (const product of DEMO_PHARMACY_PRODUCTS) {
+  dynamicProducts.set(product.id, product);
+}
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -165,7 +173,18 @@ export function clearCart() {
   setCartLines([]);
 }
 
-export function addProductToCart(productId: string) {
+export function registerPharmacyProducts(products: DemoPharmacyProduct[]) {
+  for (const product of products) {
+    dynamicProducts.set(product.id, product);
+  }
+  writeStore(CART_KEY, getCartLines());
+}
+
+export function addProductToCart(productOrId: string | DemoPharmacyProduct) {
+  const productId = typeof productOrId === "string" ? productOrId : productOrId.id;
+  if (typeof productOrId !== "string") {
+    dynamicProducts.set(productId, productOrId);
+  }
   const lines = getCartLines();
   const existing = lines.find((line) => line.productId === productId);
   if (existing) {
@@ -190,7 +209,7 @@ export function removeProduct(productId: string) {
 export function getCartSnapshot() {
   const lines = getCartLines()
     .map((line) => {
-      const product = DEMO_PHARMACY_PRODUCTS.find((item) => item.id === line.productId);
+      const product = dynamicProducts.get(line.productId);
       if (!product) return null;
       return { product, quantity: line.quantity };
     })

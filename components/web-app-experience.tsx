@@ -9,9 +9,13 @@ import { primaryNav, recordsSummary, subscriptionPlans, supportTopics } from "@/
 import {
   createSupportTicket,
   fetchActiveInstantCallRequest,
+  fetchApprovedCtmriServices,
   fetchApprovedDoctors,
-  fetchApprovedHospitals,
+  fetchApprovedHospitalServices,
   fetchApprovedLabTests,
+  fetchApprovedPharmacyProducts,
+  fetchApprovedRentalEquipment,
+  fetchApprovedStaffingProviders,
   fetchCustomerProfile,
   fetchPatientAppointments,
   fetchSupportTickets,
@@ -19,10 +23,14 @@ import {
   requestInstantCall,
   signupCustomer,
   type AppointmentSummary,
+  type CtmriServiceSummary,
   type CustomerProfileSummary,
   type DoctorSummary,
-  type HospitalSummary,
+  type HospitalServiceSummary,
   type LabTestSummary,
+  type PharmacyProductSummary,
+  type RentalEquipmentSummary,
+  type StaffingProviderSummary,
   type SupportTicketSummary,
 } from "@/lib/customer-web-live";
 import {
@@ -37,6 +45,7 @@ import {
   getLocalBookings,
   getLocalOrders,
   mobileStoreKeys,
+  registerPharmacyProducts,
   removeProduct,
   subscribeStore,
   type DemoPharmacyProduct,
@@ -122,6 +131,60 @@ function getInitials(name: string) {
     .join("") || "DR";
 }
 
+const tonePalette = [
+  "linear-gradient(180deg, #eef2ff 0%, #ffffff 100%)",
+  "linear-gradient(180deg, #effcf6 0%, #ffffff 100%)",
+  "linear-gradient(180deg, #fff7ed 0%, #ffffff 100%)",
+  "linear-gradient(180deg, #fdf2f8 0%, #ffffff 100%)",
+  "linear-gradient(180deg, #ecfeff 0%, #ffffff 100%)",
+];
+
+function toneFromSeed(seed: string) {
+  const key = seed.trim().toLowerCase();
+  const total = Array.from(key).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return tonePalette[total % tonePalette.length];
+}
+
+function MarketplaceImage({
+  src,
+  alt,
+  label,
+  style,
+  textStyle,
+  sizes = "(max-width: 1024px) 100vw, 33vw",
+  fit = "cover",
+}: {
+  src?: string | null;
+  alt: string;
+  label: string;
+  style: React.CSSProperties;
+  textStyle?: React.CSSProperties;
+  sizes?: string;
+  fit?: "cover" | "contain";
+}) {
+  const frameStyle = {
+    ...style,
+    position: "relative" as const,
+    overflow: "hidden",
+    display: "grid",
+    placeItems: "center",
+  };
+
+  if (src) {
+    return (
+      <div style={frameStyle}>
+        <Image src={src} alt={alt} fill sizes={sizes} style={{ objectFit: fit }} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...frameStyle, background: toneFromSeed(label) }}>
+      <span style={textStyle}>{label}</span>
+    </div>
+  );
+}
+
 function DoctorImage({
   doctor,
   style,
@@ -131,21 +194,16 @@ function DoctorImage({
   style: React.CSSProperties;
   textStyle?: React.CSSProperties;
 }) {
-  if (doctor.avatarUrl) {
-    return (
-      <div style={style}>
-        <Image
-          src={doctor.avatarUrl}
-          alt={doctor.name}
-          fill
-          sizes="(max-width: 1024px) 50vw, 180px"
-          style={{ objectFit: "cover" }}
-        />
-      </div>
-    );
-  }
-
-  return <div style={style}><span style={textStyle}>{getInitials(doctor.name)}</span></div>;
+  return (
+    <MarketplaceImage
+      src={doctor.avatarUrl}
+      alt={doctor.name}
+      label={getInitials(doctor.name)}
+      style={style}
+      textStyle={textStyle}
+      sizes="(max-width: 1024px) 50vw, 180px"
+    />
+  );
 }
 
 function useCart() {
@@ -415,9 +473,12 @@ export function WebHomeScreen() {
     { title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
     { title: "Pharmacy", detail: "Browse medicines and place a Razorpay checkout order.", href: "/pharmacy" },
     { title: "Lab Tests", detail: "Search tests and compare available labs.", href: "/lab-tests" },
-    { title: "Hospitals", detail: "Discover hospitals and surgery providers.", href: "/hospitals" },
-    { title: "Instant Call", detail: "Request urgent doctor guidance online.", href: "/instant-call" },
-    { title: "Appointments", detail: "Track upcoming and completed bookings.", href: "/appointments" },
+    { title: "CT / MRI", detail: "Compare imaging services with approved centers.", href: "/ct-mri" },
+    { title: "Ambulance", detail: "Request emergency pickup and support instantly.", href: "/ambulance" },
+    { title: "Rental Equipment", detail: "Browse patient-care equipment available for rent.", href: "/rental-equipment" },
+    { title: "Hospitals & Surgeries", detail: "Discover approved hospitals and surgery services.", href: "/hospitals" },
+    { title: "Health Card", detail: "Review membership-style plans and document readiness.", href: "/health-card" },
+    { title: "Care Staff", detail: "Find nurses, caregivers, and support professionals.", href: "/care-staff" },
   ];
 
   return (
@@ -938,13 +999,38 @@ export function WebProfileScreen() {
   );
 }
 
+function mapPharmacyProduct(product: PharmacyProductSummary): DemoPharmacyProduct {
+  return {
+    id: product.id,
+    name: product.name,
+    subtitle: product.subtitle,
+    category: product.category,
+    price: product.price,
+    mrp: product.mrp ?? product.price,
+    pharmacyName: product.pharmacyName,
+    inStock: product.stock,
+    tone: toneFromSeed(`${product.category}-${product.name}`),
+    accent: "#2f59ff",
+    imageUrl: product.imageUrl,
+    pharmacyId: product.pharmacyId,
+    city: product.city,
+  };
+}
+
 function ProductCard({ product }: { product: DemoPharmacyProduct }) {
   const cart = useCart();
   const line = cart.lines.find((item) => item.product.id === product.id);
 
   return (
     <div style={styles.productCard}>
-      <div style={{ ...styles.productVisual, background: product.tone }} />
+      <MarketplaceImage
+        src={product.imageUrl}
+        alt={product.name}
+        label={getInitials(product.name)}
+        style={{ ...styles.productVisual, background: product.tone }}
+        textStyle={styles.visualInitials}
+        fit="contain"
+      />
       <strong style={styles.productTitle}>{product.name}</strong>
       <span style={styles.productMeta}>{product.subtitle} · {product.inStock} in stock</span>
       <div style={styles.priceRow}>
@@ -956,18 +1042,48 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
         <div style={styles.quantityBox}>
           <button style={styles.quantityButton} onClick={() => decrementProduct(product.id)}>−</button>
           <span>{line.quantity}</span>
-          <button style={styles.quantityButton} onClick={() => addProductToCart(product.id)}>+</button>
+          <button style={styles.quantityButton} onClick={() => addProductToCart(product)}>+</button>
         </div>
       ) : (
-        <button style={styles.primaryAction} onClick={() => addProductToCart(product.id)}>Add to Cart</button>
+        <button style={styles.primaryAction} onClick={() => addProductToCart(product)}>Add to Cart</button>
       )}
     </div>
   );
 }
 
 export function WebPharmacyScreen() {
+  const [products, setProducts] = useState<DemoPharmacyProduct[]>(DEMO_PHARMACY_PRODUCTS);
+  const [loading, setLoading] = useState(true);
   const cart = useCart();
-  const categories = Array.from(new Set(DEMO_PHARMACY_PRODUCTS.map((item) => item.category)));
+
+  useEffect(() => {
+    let active = true;
+    fetchApprovedPharmacyProducts()
+      .then((items) => {
+        if (!active) return;
+        if (!items.length) {
+          setProducts(DEMO_PHARMACY_PRODUCTS);
+          return;
+        }
+        const mapped = items.map(mapPharmacyProduct);
+        registerPharmacyProducts(mapped);
+        setProducts(mapped);
+      })
+      .catch(() => {
+        if (!active) return;
+        setProducts(DEMO_PHARMACY_PRODUCTS);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const categories = Array.from(new Set(products.map((item) => item.category)));
 
   return (
     <DashboardFrame
@@ -989,13 +1105,15 @@ export function WebPharmacyScreen() {
         <p style={styles.heroCopy}>The web view keeps the same banner-driven discovery and cart journey as the customer app.</p>
       </section>
 
+      {loading ? <div style={styles.noticeCard}>Loading approved pharmacy products...</div> : null}
+
       {categories.map((category) => (
         <section key={category} style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
             <h2 style={styles.sectionTitle}>{category}</h2>
           </div>
           <div style={styles.productGrid}>
-            {DEMO_PHARMACY_PRODUCTS.filter((item) => item.category === category).map((product) => (
+            {products.filter((item) => item.category === category).map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
@@ -1063,18 +1181,18 @@ export function WebLabTestsScreen() {
 }
 
 export function WebHospitalsScreen() {
-  const [hospitals, setHospitals] = useState<HospitalSummary[]>([]);
+  const [services, setServices] = useState<HospitalServiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    fetchApprovedHospitals()
-      .then(setHospitals)
+    fetchApprovedHospitalServices()
+      .then(setServices)
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = hospitals.filter((hospital) => {
-    const haystack = `${hospital.name} ${hospital.city} ${hospital.address}`.toLowerCase();
+  const filtered = services.filter((service) => {
+    const haystack = `${service.providerName} ${service.providerCity} ${service.providerAddress} ${service.serviceName} ${service.category}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   });
 
@@ -1091,25 +1209,289 @@ export function WebHospitalsScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search hospitals, city, address..."
+          placeholder="Search hospitals, surgery services, city, address..."
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading hospitals...</div> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved hospitals available yet.</div> : null}
+      {loading ? <div style={styles.noticeCard}>Loading approved hospital services...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved hospital services available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((hospital) => (
-          <div key={hospital.id} style={styles.infoTileCard}>
-            <span style={styles.blogTag}>Hospital</span>
-            <h3 style={styles.tileTitle}>{hospital.name}</h3>
-            <p style={styles.tileCopy}>{hospital.address}</p>
+        {filtered.map((service) => (
+          <div key={service.id} style={styles.infoTileCard}>
+            <MarketplaceImage
+              src={service.imageUrl}
+              alt={service.serviceName}
+              label={getInitials(service.serviceName)}
+              style={styles.tileVisual}
+              textStyle={styles.visualInitials}
+            />
             <div style={styles.tileMetaGrid}>
-              <span>{hospital.city}</span>
-              <span>{hospital.totalBeds ? `${hospital.totalBeds} beds` : "Beds on request"}</span>
+              <span style={styles.blogTag}>Austy Verified</span>
+              <span>{service.totalBeds ? `${service.totalBeds} beds` : "Beds on request"}</span>
+            </div>
+            <h3 style={styles.tileTitle}>{service.providerName}</h3>
+            <p style={styles.tileCopy}>{service.providerCity}</p>
+            <strong style={styles.serviceNameText}>{service.serviceName}</strong>
+            <div style={styles.tileMetaGrid}>
+              <span>{service.category}</span>
+              <span>{service.providerAddress}</span>
             </div>
             <div style={styles.tileFooter}>
-              <span style={styles.availableLabel}>Approved partner</span>
+              <div style={styles.priceStack}>
+                <strong>{formatMoney(service.price)}</strong>
+                {service.basePrice > service.price ? <span style={styles.strikeText}>{formatMoney(service.basePrice)}</span> : null}
+              </div>
+              <span style={styles.availableLabel}>Instant booking</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebCtmriScreen() {
+  const [services, setServices] = useState<CtmriServiceSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetchApprovedCtmriServices()
+      .then(setServices)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = services.filter((service) => {
+    const haystack = `${service.providerName} ${service.providerCity} ${service.serviceName} ${service.category}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  return (
+    <DashboardFrame title="CT / MRI" subtitle="Compare imaging services, center details, and pricing from the same approved diagnostic catalog used by the app.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Imaging Services</span>
+        <h2 style={styles.heroHeadingAlt}>Book scans and compare approved diagnostic centers.</h2>
+        <p style={styles.heroCopy}>See live CT and MRI offerings with web-friendly cards while following the same customer discovery path as the app.</p>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search CT, MRI, center, city..."
+        />
+      </section>
+
+      {loading ? <div style={styles.noticeCard}>Loading imaging services...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved CT / MRI services available yet.</div> : null}
+
+      <div style={styles.serviceTileGrid}>
+        {filtered.map((service) => (
+          <div key={service.id} style={styles.infoTileCard}>
+            <MarketplaceImage
+              src={service.imageUrl}
+              alt={service.serviceName}
+              label={getInitials(service.serviceName)}
+              style={styles.tileVisual}
+              textStyle={styles.visualInitials}
+            />
+            <span style={styles.blogTag}>{service.category}</span>
+            <h3 style={styles.tileTitle}>{service.serviceName}</h3>
+            <p style={styles.tileCopy}>{service.providerName}</p>
+            <div style={styles.tileMetaGrid}>
+              <span>{service.providerCity}</span>
+              <span>{service.providerAddress}</span>
+            </div>
+            <div style={styles.tileFooter}>
+              <div style={styles.priceStack}>
+                <strong>{formatMoney(service.price)}</strong>
+                {service.basePrice > service.price ? <span style={styles.strikeText}>{formatMoney(service.basePrice)}</span> : null}
+              </div>
+              <span style={styles.availableLabel}>Same-day slots</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebRentalEquipmentScreen() {
+  const [items, setItems] = useState<RentalEquipmentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetchApprovedRentalEquipment()
+      .then(setItems)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = items.filter((item) => {
+    const haystack = `${item.name} ${item.category} ${item.providerName} ${item.city} ${item.brand} ${item.model}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  return (
+    <DashboardFrame title="Rental Equipment" subtitle="Browse patient-care equipment, compare rental pricing, and review the same rental inventory service family shown in the app.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Rental Equipment</span>
+        <h2 style={styles.heroHeadingAlt}>Wheelchairs, patient beds, supports, and home-care gear in one place.</h2>
+        <p style={styles.heroCopy}>This web catalog keeps the same rental discovery intent while giving more room for pricing, deposit, and provider details.</p>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search equipment, category, city..."
+        />
+      </section>
+
+      {loading ? <div style={styles.noticeCard}>Loading rental equipment...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved rental equipment available yet.</div> : null}
+
+      <div style={styles.serviceTileGrid}>
+        {filtered.map((item) => (
+          <div key={item.id} style={styles.infoTileCard}>
+            <MarketplaceImage
+              src={item.imageUrl}
+              alt={item.name}
+              label={getInitials(item.name)}
+              style={styles.tileVisual}
+              textStyle={styles.visualInitials}
+              fit="contain"
+            />
+            <span style={styles.blogTag}>{item.category}</span>
+            <h3 style={styles.tileTitle}>{item.name}</h3>
+            <p style={styles.tileCopy}>{item.providerName}</p>
+            <div style={styles.tileMetaGrid}>
+              <span>{item.city}</span>
+              <span>{item.stock} in stock</span>
+            </div>
+            <div style={styles.priceStack}>
+              <strong>{formatMoney(item.price)} / day</strong>
+              <span>{formatMoney(item.weeklyPrice)} weekly · {formatMoney(item.monthlyPrice)} monthly</span>
+            </div>
+            <div style={styles.tileFooter}>
+              <span>Deposit {formatMoney(item.deposit)}</span>
+              <span style={styles.availableLabel}>Request rental</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebHealthCardScreen() {
+  return (
+    <DashboardFrame title="Health Card" subtitle="Review customer plans, document readiness, and health-card style member benefits from a dedicated web entry point.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Health Card</span>
+        <h2 style={styles.heroHeadingAlt}>Membership plans, records, and care benefits in one customer view.</h2>
+        <p style={styles.heroCopy}>The mobile app uses this service family for plan access and documentation, so this web page brings the same workflows together cleanly.</p>
+      </section>
+
+      <div style={styles.twoColumnGrid}>
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Available Plans</h2>
+          </div>
+          <div style={styles.planCardGrid}>
+            {subscriptionPlans.map((plan) => (
+              <div key={plan.name} style={styles.membershipCard}>
+                <span style={styles.subscriptionTag}>Health Card Plan</span>
+                <h3 style={styles.tileTitle}>{plan.name}</h3>
+                <div style={styles.membershipPrice}>{plan.price}</div>
+                <p style={styles.tileCopy}>{plan.detail}</p>
+                <Link href="/subscription-plans" style={styles.primaryActionLink}>View Plan</Link>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>What You Can Manage</h2>
+          </div>
+          <div style={styles.stackList}>
+            {[
+              ["Health card details", "Keep your membership reference, identity details, and service eligibility ready."],
+              ["Documents", "Prepare prescriptions, reports, and patient documents for assisted verification."],
+              ["Benefits", "Use the same plan family for savings on consultations, diagnostics, and pharmacy journeys."],
+            ].map(([title, copy]) => (
+              <div key={title} style={styles.stepCard}>
+                <strong>{title}</strong>
+                <p>{copy}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </DashboardFrame>
+  );
+}
+
+export function WebCareStaffScreen() {
+  const [staff, setStaff] = useState<StaffingProviderSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetchApprovedStaffingProviders()
+      .then(setStaff)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = staff.filter((item) => {
+    const haystack = `${item.name} ${item.profession} ${item.city} ${item.qualifications}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  return (
+    <DashboardFrame title="Care Staff" subtitle="Find approved nurses, caregivers, and trained support staff from the same staffing service family available in the app.">
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Care Staff</span>
+        <h2 style={styles.heroHeadingAlt}>Browse approved home-care and support professionals.</h2>
+        <p style={styles.heroCopy}>This web screen mirrors the staffing discovery layer so patients can review availability, experience, and rates with more space.</p>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search nurse, caregiver, attendant, city..."
+        />
+      </section>
+
+      {loading ? <div style={styles.noticeCard}>Loading care staff providers...</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved care staff providers available yet.</div> : null}
+
+      <div style={styles.serviceTileGrid}>
+        {filtered.map((item) => (
+          <div key={item.id} style={styles.infoTileCard}>
+            <MarketplaceImage
+              src={item.avatarUrl}
+              alt={item.name}
+              label={getInitials(item.name)}
+              style={styles.staffVisual}
+              textStyle={styles.visualInitials}
+            />
+            <span style={styles.blogTag}>{item.profession}</span>
+            <h3 style={styles.tileTitle}>{item.name}</h3>
+            <p style={styles.tileCopy}>{item.qualifications || "Approved staffing provider"}</p>
+            <div style={styles.tileMetaGrid}>
+              <span>{item.city}</span>
+              <span>{item.experience != null ? `${item.experience}+ yrs` : "Experience on request"}</span>
+            </div>
+            <div style={styles.tileFooter}>
+              <strong>{item.fee != null ? `${formatMoney(item.fee)} / shift` : "Quote on request"}</strong>
+              <span style={styles.availableLabel}>Request staff</span>
             </div>
           </div>
         ))}
@@ -1407,7 +1789,15 @@ export function WebPharmacyCartScreen() {
           <div style={styles.noticeCard}>You unlocked free delivery on this order.</div>
           {cart.lines.map((line) => (
             <div key={line.product.id} style={styles.cartLine}>
-              <div style={{ ...styles.cartImage, background: line.product.tone }} />
+              <MarketplaceImage
+                src={line.product.imageUrl}
+                alt={line.product.name}
+                label={getInitials(line.product.name)}
+                style={{ ...styles.cartImage, background: line.product.tone }}
+                textStyle={styles.visualInitials}
+                fit="contain"
+                sizes="112px"
+              />
               <div style={styles.cartContent}>
                 <strong>{line.product.name}</strong>
                 <span style={styles.productMeta}>{line.product.subtitle} · {line.product.inStock} in stock</span>
@@ -1418,7 +1808,7 @@ export function WebPharmacyCartScreen() {
                 <div style={styles.quantityBox}>
                   <button style={styles.quantityButton} onClick={() => decrementProduct(line.product.id)}>−</button>
                   <span>{line.quantity}</span>
-                  <button style={styles.quantityButton} onClick={() => addProductToCart(line.product.id)}>+</button>
+                  <button style={styles.quantityButton} onClick={() => addProductToCart(line.product)}>+</button>
                 </div>
               </div>
               <button style={styles.removeButton} onClick={() => removeProduct(line.product.id)}>Remove</button>
@@ -1733,6 +2123,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "sticky",
     top: 0,
     height: "100vh",
+    overflowY: "auto",
   },
   brandWrap: {
     display: "flex",
@@ -2588,6 +2979,13 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 180,
     borderRadius: 22,
     border: "1px solid #edf2fb",
+    background: "#f8fbff",
+  },
+  visualInitials: {
+    color: "#2f59ff",
+    fontSize: "2.4rem",
+    fontWeight: 900,
+    letterSpacing: "-0.06em",
   },
   productTitle: {
     color: "#20346d",
@@ -2671,6 +3069,7 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 112,
     borderRadius: 20,
     border: "1px solid #edf2fb",
+    background: "#f8fbff",
   },
   cartContent: {
     display: "grid",
@@ -2764,12 +3163,29 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     color: "#20346d",
   },
+  tileVisual: {
+    minHeight: 220,
+    borderRadius: 22,
+    border: "1px solid #edf2fb",
+    background: "#f8fbff",
+  },
+  staffVisual: {
+    minHeight: 220,
+    borderRadius: 22,
+    border: "1px solid #edf2fb",
+    background: "#f2f6ff",
+  },
   tileTitle: {
     margin: 0,
     color: "#20346d",
     fontSize: "1.45rem",
     lineHeight: 1.1,
     letterSpacing: "-0.04em",
+  },
+  serviceNameText: {
+    color: "#20346d",
+    fontSize: "1.05rem",
+    fontWeight: 800,
   },
   tileCopy: {
     margin: 0,
@@ -2790,6 +3206,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 12,
     marginTop: 4,
+    color: "#20346d",
+  },
+  priceStack: {
+    display: "grid",
+    gap: 4,
     color: "#20346d",
   },
   stackList: {
