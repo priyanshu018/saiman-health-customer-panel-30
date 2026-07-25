@@ -160,6 +160,7 @@ function MarketplaceImage({
   style,
   textStyle,
   fit = "cover",
+  sizes,
 }: {
   src?: string | null;
   fallbackSrc?: string;
@@ -168,6 +169,7 @@ function MarketplaceImage({
   style: React.CSSProperties;
   textStyle?: React.CSSProperties;
   fit?: "cover" | "contain";
+  sizes?: string;
 }) {
   const frameStyle = {
     ...style,
@@ -186,6 +188,7 @@ function MarketplaceImage({
         <img
           src={imageSrc}
           alt={alt}
+          sizes={sizes}
           style={{
             width: "100%",
             height: "100%",
