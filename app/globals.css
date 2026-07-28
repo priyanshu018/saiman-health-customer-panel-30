@@ -673,6 +673,30 @@ a {
   border-color: rgba(37, 99, 235, 0.12);
 }
 
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background-image: linear-gradient(100deg, rgba(37, 99, 235, 0.08) 30%, rgba(37, 99, 235, 0.16) 45%, rgba(37, 99, 235, 0.08) 60%);
+  background-size: 250% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+.marketplace-image-fade {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.marketplace-image-fade.is-loaded {
+  opacity: 1;
+}
+
 .dual-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -152,6 +152,45 @@ function toneFromSeed(seed: string) {
   return tonePalette[total % tonePalette.length];
 }
 
+function FadeInImage({
+  src,
+  alt,
+  sizes,
+  fit,
+  imageStyle,
+}: {
+  src: string;
+  alt: string;
+  sizes?: string;
+  fit: "cover" | "contain";
+  imageStyle?: React.CSSProperties;
+}) {
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <>
+      {!loaded ? <div className="skeleton-shimmer" style={{ position: "absolute", inset: 0 }} /> : null}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        sizes={sizes}
+        onLoad={() => setLoaded(true)}
+        className={`marketplace-image-fade${loaded ? " is-loaded" : ""}`}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: fit,
+          display: "block",
+          ...imageStyle,
+        }}
+      />
+    </>
+  );
+}
+
 function MarketplaceImage({
   src,
   fallbackSrc,
@@ -173,6 +212,8 @@ function MarketplaceImage({
   sizes?: string;
   imageStyle?: React.CSSProperties;
 }) {
+  const imageSrc = src || fallbackSrc;
+
   const frameStyle = {
     ...style,
     position: "relative" as const,
@@ -181,24 +222,10 @@ function MarketplaceImage({
     placeItems: "center",
   };
 
-  const imageSrc = src || fallbackSrc;
-
   if (imageSrc) {
     return (
       <div style={frameStyle}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageSrc}
-          alt={alt}
-          sizes={sizes}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: fit,
-            display: "block",
-            ...imageStyle,
-          }}
-        />
+        <FadeInImage key={imageSrc} src={imageSrc} alt={alt} sizes={sizes} fit={fit} imageStyle={imageStyle} />
       </div>
     );
   }
@@ -206,6 +233,77 @@ function MarketplaceImage({
   return (
     <div style={{ ...frameStyle, background: toneFromSeed(label) }}>
       <span style={textStyle}>{label}</span>
+    </div>
+  );
+}
+
+function SkeletonBlock({ style }: { style: React.CSSProperties }) {
+  return <div className="skeleton-shimmer" style={style} />;
+}
+
+function TileCardSkeleton() {
+  return (
+    <div style={styles.infoTileCard}>
+      <SkeletonBlock style={styles.tileVisual} />
+      <SkeletonBlock style={{ width: "40%", height: 14, borderRadius: 999 }} />
+      <SkeletonBlock style={{ width: "80%", height: 18, borderRadius: 8 }} />
+      <SkeletonBlock style={{ width: "55%", height: 14, borderRadius: 8 }} />
+      <SkeletonBlock style={{ width: "100%", height: 34, borderRadius: 10, marginTop: 6 }} />
+    </div>
+  );
+}
+
+function TileGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div style={styles.serviceTileGrid}>
+      {Array.from({ length: count }).map((_, index) => (
+        <TileCardSkeleton key={index} />
+      ))}
+    </div>
+  );
+}
+
+function DoctorCardSkeleton() {
+  return (
+    <div style={styles.doctorCard}>
+      <SkeletonBlock style={styles.doctorAvatarPanel} />
+      <div style={{ display: "grid", gap: 8 }}>
+        <SkeletonBlock style={{ width: "70%", height: 16, borderRadius: 8 }} />
+        <SkeletonBlock style={{ width: "50%", height: 13, borderRadius: 8 }} />
+        <SkeletonBlock style={{ width: "85%", height: 13, borderRadius: 8 }} />
+      </div>
+    </div>
+  );
+}
+
+function DoctorGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div style={styles.doctorGrid}>
+      {Array.from({ length: count }).map((_, index) => (
+        <DoctorCardSkeleton key={index} />
+      ))}
+    </div>
+  );
+}
+
+function ProductCardSkeleton() {
+  return (
+    <div style={styles.productCard}>
+      <SkeletonBlock style={styles.productVisual} />
+      <SkeletonBlock style={{ width: "75%", height: 18, borderRadius: 8 }} />
+      <SkeletonBlock style={{ width: "50%", height: 13, borderRadius: 8 }} />
+      <SkeletonBlock style={{ width: "40%", height: 20, borderRadius: 8 }} />
+      <SkeletonBlock style={{ width: "100%", height: 34, borderRadius: 10 }} />
+    </div>
+  );
+}
+
+function ProductGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div style={styles.productGrid}>
+      {Array.from({ length: count }).map((_, index) => (
+        <ProductCardSkeleton key={index} />
+      ))}
     </div>
   );
 }
@@ -736,10 +834,10 @@ export function WebDoctorsScreen() {
         </div>
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading doctors...</div> : null}
+      {loading ? <DoctorGridSkeleton /> : null}
 
       <div style={styles.doctorGrid}>
-        {filtered.map((doctor) => (
+        {loading ? null : filtered.map((doctor) => (
           <Link key={doctor.id} href={`/doctors/${doctor.id}`} style={styles.doctorCard}>
             <DoctorImage
               doctor={doctor}
@@ -1226,9 +1324,9 @@ export function WebPharmacyScreen() {
         <p style={styles.heroCopy}>The web view keeps the same banner-driven discovery and cart journey as the customer app.</p>
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading approved pharmacy products...</div> : null}
+      {loading ? <ProductGridSkeleton /> : null}
 
-      {categories.map((category) => (
+      {loading ? null : categories.map((category) => (
         <section key={category} style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
             <h2 style={styles.sectionTitle}>{category}</h2>
@@ -1277,11 +1375,11 @@ export function WebLabTestsScreen() {
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading lab tests...</div> : null}
+      {loading ? <TileGridSkeleton /> : null}
       {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved lab tests available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((test) => (
+        {loading ? null : filtered.map((test) => (
           <div key={test.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={test.imageUrl}
@@ -1342,11 +1440,11 @@ export function WebHospitalsScreen() {
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading approved hospital services...</div> : null}
+      {loading ? <TileGridSkeleton /> : null}
       {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved hospital services available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((service) => (
+        {loading ? null : filtered.map((service) => (
           <div key={service.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
@@ -1414,11 +1512,11 @@ export function WebCtmriScreen() {
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading imaging services...</div> : null}
+      {loading ? <TileGridSkeleton /> : null}
       {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved CT / MRI services available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((service) => (
+        {loading ? null : filtered.map((service) => (
           <div key={service.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
@@ -1482,11 +1580,11 @@ export function WebRentalEquipmentScreen() {
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading rental equipment...</div> : null}
+      {loading ? <TileGridSkeleton /> : null}
       {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved rental equipment available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((item) => (
+        {loading ? null : filtered.map((item) => (
           <div key={item.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.imageUrl}
@@ -1610,11 +1708,11 @@ export function WebCareStaffScreen() {
         />
       </section>
 
-      {loading ? <div style={styles.noticeCard}>Loading care staff providers...</div> : null}
+      {loading ? <TileGridSkeleton /> : null}
       {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved care staff providers available yet.</div> : null}
 
       <div style={styles.serviceTileGrid}>
-        {filtered.map((item) => (
+        {loading ? null : filtered.map((item) => (
           <div key={item.id} style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.avatarUrl}
