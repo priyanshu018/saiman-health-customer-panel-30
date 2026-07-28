@@ -1,5 +1,5 @@
-import { WebHomeScreen } from "@/components/web-app-experience";
+import { CustomerLandingPage } from "@/components/customer-site-pages";
 
 export default function HomePage() {
-  return <WebHomeScreen />;
+  return <CustomerLandingPage />;
 }

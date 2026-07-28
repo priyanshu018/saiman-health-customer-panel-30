@@ -21,7 +21,7 @@ export function CustomerShell({ title, subtitle, children, actions }: CustomerSh
         <Link href="/" className="brand-lockup">
           <span className="brand-badge">SH</span>
           <div>
-            <strong>Saiman Health</strong>
+            <strong>Saiman Healthcare</strong>
             <small>Customer Care Portal</small>
           </div>
         </Link>

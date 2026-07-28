@@ -10,6 +10,8 @@ grant select on public.lab_test_approvals to anon;
 grant select on public.hospital_service_approvals to anon;
 grant select on public.ctmri_service_approvals to anon;
 grant select on public.rental_equipment_approvals to anon;
+grant select on public.cms_pages to anon;
+grant select on public.cms_blogs to anon;
 
 drop policy if exists "Anonymous users can read approved marketplace providers" on public.users;
 create policy "Anonymous users can read approved marketplace providers"
@@ -102,3 +104,17 @@ using (
   status = 'Approved'
   and coalesce(is_active, false) = true
 );
+
+drop policy if exists "Anonymous users can read published CMS pages" on public.cms_pages;
+create policy "Anonymous users can read published CMS pages"
+on public.cms_pages
+for select
+to anon
+using (status = 'Published');
+
+drop policy if exists "Anonymous users can read published CMS blogs" on public.cms_blogs;
+create policy "Anonymous users can read published CMS blogs"
+on public.cms_blogs
+for select
+to anon
+using (status = 'Published');

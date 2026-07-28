@@ -245,7 +245,7 @@ export function MobileLoginScreen() {
           <div style={ui.authHero}>
             <div style={ui.authHeroBackdrop} />
             <IconBox label="✚" filled color="#2f59ff" />
-            <h1 style={ui.authBrand}>Austy Healthcare</h1>
+            <h1 style={ui.authBrand}>Saiman Healthcare</h1>
             <p style={ui.authTagline}>Book care, medicines, tests and ambulance support</p>
           </div>
           <div style={ui.authCard}>
@@ -271,7 +271,7 @@ export function MobileSignupScreen() {
           <div style={ui.authHero}>
             <div style={ui.authHeroBackdrop} />
             <IconBox label="✚" filled color="#2f59ff" />
-            <h1 style={ui.authBrand}>Austy Healthcare</h1>
+            <h1 style={ui.authBrand}>Saiman Healthcare</h1>
             <p style={ui.authTagline}>Create one account for consults, tests, pharmacy and emergency help</p>
           </div>
           <div style={ui.authCard}>
@@ -637,7 +637,7 @@ export function MobileDoctorDetailScreen({ doctorId }: { doctorId: string }) {
           <div style={ui.whiteSectionCard}>
             <h2 style={ui.sectionTitleStandalone}>About Doctor</h2>
             <p style={ui.bodyTextLarge}>
-              {doctor.name} is verified on Austy Healthcare and available for appointments through Austy Healthcare.
+              {doctor.name} is verified on Saiman Healthcare and available for appointments through Saiman Healthcare.
             </p>
             <div style={ui.infoGrid}>
               <div style={ui.softInfoBox}><strong>Next Available</strong><span>Today · Evening: 05:00 AM - 06:00 AM</span></div>
@@ -988,7 +988,7 @@ export function MobilePharmacyCartScreen() {
           paymentMethod: "upi",
           total: cart.total,
           itemCount: cart.itemCount,
-          pharmacyName: "Austy Pharmacy",
+          pharmacyName: "Saiman Pharmacy",
           items: cart.lines.map((line) => ({
             productId: line.product.id,
             quantity: line.quantity,
@@ -998,11 +998,11 @@ export function MobilePharmacyCartScreen() {
         },
         payment: {
           serviceType: "pharmacy_order",
-          serviceLabel: "Austy Pharmacy",
+          serviceLabel: "Saiman Pharmacy",
           description: `${cart.itemCount} items from pharmacy`,
           amount: cart.total,
           paymentMethod: "upi",
-          providerName: "Austy Pharmacy",
+          providerName: "Saiman Pharmacy",
           customer: {
             name: user.name,
             email: user.email,

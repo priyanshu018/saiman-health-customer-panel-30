@@ -20,6 +20,57 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## CMS-driven landing pages
+
+The customer landing page, blogs, and legal pages now read from Supabase CMS tables used by the super admin panel.
+
+- `cms_pages.slug = "home-landing"` powers the homepage hero, footer, and shared marketing content.
+- `cms_pages.slug = "about-us"` powers the About Us page and homepage about section.
+- `cms_pages.slug = "privacy-policy"` powers the Privacy Policy page.
+- `cms_pages.slug = "terms-and-conditions"` powers the Terms & Conditions page.
+- `cms_pages.slug = "support"` powers the support intro content above the live ticket form.
+- Published rows from `cms_blogs` power the `/blogs` page and homepage blog cards.
+
+Suggested `home-landing` JSON content:
+
+```json
+{
+  "hero": {
+    "eyebrow": "Saiman Healthcare",
+    "title": "Empowering recovery and independence at home.",
+    "description": "Short banner copy here.",
+    "imageUrl": "https://...",
+    "primaryAction": { "label": "Book a Consultation", "href": "/doctors" },
+    "secondaryAction": { "label": "Talk to Support", "href": "/support" },
+    "stats": [
+      { "label": "Trusted care pathways", "value": "24×7" },
+      { "label": "Home services", "value": "7+" }
+    ]
+  },
+  "about": {
+    "eyebrow": "About Us",
+    "title": "Critical care and recovery support.",
+    "description": "Short about copy here.",
+    "imageUrl": "https://...",
+    "highlights": ["Highlight one", "Highlight two", "Highlight three"]
+  },
+  "footer": {
+    "summary": "Short footer summary.",
+    "address": "Full address",
+    "email": "info@example.com",
+    "phones": ["9999999999", "011-00000000"],
+    "supportTitle": "Request care guidance",
+    "supportDescription": "Short support copy here.",
+    "socials": [
+      { "label": "Facebook", "href": "https://facebook.com/..." },
+      { "label": "Instagram", "href": "https://instagram.com/..." }
+    ]
+  }
+}
+```
+
+For public browsing, run the updated SQL in [sql/public-browse-policies.sql](/Users/primedepthlabs/PDL/Project_Under_30K/Saiman-healthcare/saiman-health-customer-panel/sql/public-browse-policies.sql:1) so `anon` can read published CMS content.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

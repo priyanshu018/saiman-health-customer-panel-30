@@ -421,7 +421,7 @@ export async function fetchApprovedPharmacyProducts() {
     mrp: row.mrp == null ? null : numberValue(row.mrp, 0),
     stock: numberValue(row.stock, 0),
     pharmacyId: row.pharmacy_id || null,
-    pharmacyName: text(row.pharmacy_name, "Austy Pharmacy"),
+    pharmacyName: text(row.pharmacy_name, "Saiman Pharmacy"),
     city: text(row.city, "City pending"),
     imageUrl:
       text(row.image_url) ||

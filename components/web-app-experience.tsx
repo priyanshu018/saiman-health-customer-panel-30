@@ -53,7 +53,7 @@ import {
 import { beginWebPayment, clearPendingPayment, getCallServerBase, getPendingPayment, verifyWebPayment } from "@/lib/web-payments";
 
 function formatMoney(value: number) {
-  return `Rs ${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(date: string) {
@@ -132,11 +132,11 @@ function getInitials(name: string) {
 }
 
 const tonePalette = [
-  "linear-gradient(180deg, #eef2ff 0%, #ffffff 100%)",
-  "linear-gradient(180deg, #effcf6 0%, #ffffff 100%)",
-  "linear-gradient(180deg, #fff7ed 0%, #ffffff 100%)",
-  "linear-gradient(180deg, #fdf2f8 0%, #ffffff 100%)",
-  "linear-gradient(180deg, #ecfeff 0%, #ffffff 100%)",
+  "linear-gradient(180deg, #eef2ff 0%, var(--surface-strong)fff 100%)",
+  "linear-gradient(180deg, #effcf6 0%, var(--surface-strong)fff 100%)",
+  "linear-gradient(180deg, var(--surface-strong)7ed 0%, var(--surface-strong)fff 100%)",
+  "linear-gradient(180deg, #fdf2f8 0%, var(--surface-strong)fff 100%)",
+  "linear-gradient(180deg, #ecfeff 0%, var(--surface-strong)fff 100%)",
 ];
 
 const APP_FALLBACK_IMAGES = {
@@ -161,6 +161,7 @@ function MarketplaceImage({
   textStyle,
   fit = "cover",
   sizes,
+  imageStyle,
 }: {
   src?: string | null;
   fallbackSrc?: string;
@@ -170,6 +171,7 @@ function MarketplaceImage({
   textStyle?: React.CSSProperties;
   fit?: "cover" | "contain";
   sizes?: string;
+  imageStyle?: React.CSSProperties;
 }) {
   const frameStyle = {
     ...style,
@@ -194,6 +196,7 @@ function MarketplaceImage({
             height: "100%",
             objectFit: fit,
             display: "block",
+            ...imageStyle,
           }}
         />
       </div>
@@ -211,10 +214,12 @@ function DoctorImage({
   doctor,
   style,
   textStyle,
+  imageStyle,
 }: {
   doctor: Pick<DoctorSummary, "name" | "avatarUrl">;
   style: React.CSSProperties;
   textStyle?: React.CSSProperties;
+  imageStyle?: React.CSSProperties;
 }) {
   return (
     <MarketplaceImage
@@ -223,6 +228,7 @@ function DoctorImage({
       label={getInitials(doctor.name)}
       style={style}
       textStyle={textStyle}
+      imageStyle={imageStyle}
     />
   );
 }
@@ -397,7 +403,7 @@ function AuthPageTemplate({
     <div style={styles.authPage}>
       <div style={styles.authGrid}>
         <section style={styles.authVisual}>
-          <div style={styles.authBadge}>Austy Healthcare</div>
+          <div style={styles.authBadge}>✚ Saiman Healthcare</div>
           <h1 style={styles.authHeadline}>{title}</h1>
           <p style={styles.authCopy}>{subtitle}</p>
           <div style={styles.authHighlightGrid}>
@@ -407,7 +413,7 @@ function AuthPageTemplate({
               "Manage appointments, instant calls, and care history in one place",
             ].map((item) => (
               <div key={item} style={styles.authHighlightCard}>
-                <span style={styles.authHighlightIcon}>✚</span>
+                <span style={styles.authHighlightIcon}>✓</span>
                 <span>{item}</span>
               </div>
             ))}
@@ -471,41 +477,44 @@ function DashboardFrame({
         <Link href="/" style={styles.brandWrap}>
           <span style={styles.brandMark}>✚</span>
           <div>
-            <strong style={styles.brandTitle}>Austy Healthcare</strong>
-            <small style={styles.brandSub}>Customer web app</small>
+            <strong style={styles.brandTitle}>Saiman Healthcare</strong>
+            <small style={styles.brandSub}>Customer Care Portal</small>
           </div>
         </Link>
 
+        <div style={styles.navGroupLabel}>Menu</div>
         <nav style={styles.navList}>
           {primaryNav.map((item) => {
             const active = pathname === item.href;
             return (
               <Link key={item.href} href={item.href} style={{ ...styles.navItem, ...(active ? styles.navItemActive : {}) }}>
-                <span style={styles.navItemShort}>{item.short}</span>
-                <small style={styles.navItemLabel}>{item.label}</small>
+                <span style={{ ...styles.navItemIcon, ...(active ? styles.navItemIconActive : {}) }}>{item.label.slice(0, 1)}</span>
+                <span style={styles.navItemLabel}>{item.label}</span>
+                {active ? <span style={styles.navItemDot} /> : null}
               </Link>
             );
           })}
         </nav>
 
         <div style={styles.sidebarPromo}>
-          <span style={styles.sidebarPromoTag}>LIVE SUPPORT</span>
+          <span style={styles.sidebarPromoTag}>Live support</span>
           <h3 style={styles.sidebarPromoTitle}>Need urgent medical guidance?</h3>
           <p style={styles.sidebarPromoCopy}>Start the same instant-call flow from the app, now optimized for web.</p>
           <Link href="/instant-call" style={styles.sidebarPromoButton}>Start Instant Call</Link>
         </div>
       </aside>
 
-      <main style={styles.mainArea}>
-        <header style={styles.topbar}>
-          <div>
-            <div style={styles.pageEyebrow}>Saiman Customer Experience</div>
-            <h1 style={styles.pageTitle}>{title}</h1>
-            <p style={styles.pageSubtitle}>{subtitle}</p>
+      <div style={styles.mainArea}>
+        <header style={styles.topNav}>
+          <div style={styles.topNavSearch}>
+            <span style={styles.topNavSearchIcon}>⌕</span>
+            <span style={styles.topNavSearchText}>Search doctors, tests, medicines, orders…</span>
           </div>
-          <div style={styles.topbarRight}>
+          <div style={styles.topNavRight}>
             {accent}
+            <button type="button" style={styles.iconButton} aria-label="Notifications">🔔</button>
             <div style={styles.topbarAccount}>
+              <div style={styles.accountAvatar}>{(user?.name || "G").slice(0, 1).toUpperCase()}</div>
               <div style={styles.accountMeta}>
                 <strong>{user?.name || "Guest Customer"}</strong>
                 <span>{user?.email || "Browse first, sign up when you book"}</span>
@@ -514,8 +523,20 @@ function DashboardFrame({
             </div>
           </div>
         </header>
-        <section style={styles.mainContent}>{children}</section>
-      </main>
+
+        <main style={styles.mainScroll}>
+          <div style={styles.mainInner}>
+            <div style={styles.pageHeaderRow}>
+              <div>
+                <div style={styles.pageEyebrow}>Saiman Customer Experience</div>
+                <h1 style={styles.pageTitle}>{title}</h1>
+                <p style={styles.pageSubtitle}>{subtitle}</p>
+              </div>
+            </div>
+            <section style={styles.mainContent}>{children}</section>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
@@ -523,6 +544,8 @@ function DashboardFrame({
 export function WebHomeScreen() {
   const { user } = useCustomerUser();
   const cart = useCart();
+  const bookings = useBookings();
+  const orders = useOrders();
 
   const services = [
     { title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
@@ -536,16 +559,32 @@ export function WebHomeScreen() {
     { title: "Care Staff", detail: "Find nurses, caregivers, and support professionals.", href: "/care-staff" },
   ];
 
+  const overviewStats = [
+    { label: "Upcoming appointments", value: String(bookings.filter((item) => item.status === "upcoming").length), href: "/appointments" },
+    { label: "Cart items", value: String(cart.itemCount), href: "/pharmacy/cart" },
+    { label: "Pharmacy orders", value: String(orders.length), href: "/pharmacy/orders" },
+    { label: "Health card", value: "Active", href: "/health-card" },
+  ];
+
   return (
     <DashboardFrame
       title={`Good morning, ${user?.name || "Customer"}!`}
       subtitle="This web dashboard follows the same customer flow as the app: discover services, book doctors, pay online, and manage orders from one place."
       accent={cart.itemCount ? <Link href="/pharmacy/cart" style={styles.headerPill}>Cart · {cart.itemCount}</Link> : undefined}
     >
+      <div style={styles.statRow}>
+        {overviewStats.map((stat) => (
+          <Link key={stat.label} href={stat.href} style={styles.statCard}>
+            <span style={styles.statLabel}>{stat.label}</span>
+            <strong style={styles.statValue}>{stat.value}</strong>
+          </Link>
+        ))}
+      </div>
+
       <div style={styles.heroGrid}>
         <section style={styles.heroPanel}>
-          <div style={styles.heroTag}>Limited Time</div>
-          <h2 style={styles.heroHeading}>20% off on lab tests and one place for all healthcare services.</h2>
+          <div style={styles.heroTag}>Limited time</div>
+          <h2 style={styles.heroHeading}>20% off lab tests. One place for every healthcare service.</h2>
           <p style={styles.heroCopy}>Book trusted doctors, medicines, tests, ambulance help, hospitals, and instant calls from a web experience modeled after the customer app.</p>
           <div style={styles.heroActionRow}>
             <Link href="/doctors" style={styles.primaryActionLink}>Book Doctor</Link>
@@ -702,7 +741,12 @@ export function WebDoctorsScreen() {
       <div style={styles.doctorGrid}>
         {filtered.map((doctor) => (
           <Link key={doctor.id} href={`/doctors/${doctor.id}`} style={styles.doctorCard}>
-            <DoctorImage doctor={doctor} style={styles.doctorAvatarPanel} textStyle={styles.doctorAvatarFallback} />
+            <DoctorImage
+              doctor={doctor}
+              style={styles.doctorAvatarPanel}
+              textStyle={styles.doctorAvatarFallback}
+              imageStyle={styles.doctorAvatarImage}
+            />
             <div style={styles.doctorBody}>
               <div style={styles.doctorTopline}>
                 <h3 style={styles.doctorName}>{doctor.name}</h3>
@@ -817,7 +861,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
             <div style={styles.aboutCard}>
               <h3 style={styles.sectionTitle}>About Doctor</h3>
               <p style={styles.blogDetail}>
-                {doctor.name} is verified on Austy Healthcare and available for appointments through the same customer platform used by the app.
+                {doctor.name} is verified on Saiman Healthcare and available for appointments through the same customer platform used by the app.
               </p>
               <div style={styles.infoStatGrid}>
                 <div style={styles.infoStatCard}>
@@ -1079,7 +1123,7 @@ function mapPharmacyProduct(product: PharmacyProductSummary): DemoPharmacyProduc
     pharmacyName: product.pharmacyName,
     inStock: product.stock,
     tone: toneFromSeed(`${product.category}-${product.name}`),
-    accent: "#2f59ff",
+    accent: "var(--brand)",
     imageUrl: product.imageUrl,
     pharmacyId: product.pharmacyId,
     city: product.city,
@@ -1313,7 +1357,7 @@ export function WebHospitalsScreen() {
               textStyle={styles.visualInitials}
             />
             <div style={styles.tileMetaGrid}>
-              <span style={styles.blogTag}>Austy Verified</span>
+              <span style={styles.blogTag}>Saiman Verified</span>
               <span>{service.totalBeds ? `${service.totalBeds} beds` : "Beds on request"}</span>
             </div>
             <h3 style={styles.tileTitle}>{service.providerName}</h3>
@@ -1861,7 +1905,7 @@ export function WebPharmacyCartScreen() {
           paymentMethod: "upi",
           total: cart.total,
           itemCount: cart.itemCount,
-          pharmacyName: "Austy Pharmacy",
+          pharmacyName: "Saiman Pharmacy",
           items: cart.lines.map((line) => ({
             productId: line.product.id,
             quantity: line.quantity,
@@ -1871,11 +1915,11 @@ export function WebPharmacyCartScreen() {
         },
         payment: {
           serviceType: "pharmacy_order",
-          serviceLabel: "Austy Pharmacy",
+          serviceLabel: "Saiman Pharmacy",
           description: `${cart.itemCount} items from pharmacy`,
           amount: cart.total,
           paymentMethod: "upi",
-          providerName: "Austy Pharmacy",
+          providerName: "Saiman Pharmacy",
           customer: {
             name: user.name,
             email: user.email,
@@ -2023,32 +2067,60 @@ export function WebPaymentCallbackScreen() {
   );
 }
 
+const themeStyles = {
+  pageGradient: "linear-gradient(180deg, var(--bg) 0%, var(--surface-alt) 100%)",
+  authGradient: "linear-gradient(160deg, var(--brand) 0%, var(--brand-deep) 100%)",
+  brandGradient: "linear-gradient(135deg, var(--brand), var(--brand-soft))",
+  heroGradient: "linear-gradient(135deg, var(--brand-deep) 0%, var(--brand) 62%, var(--brand-soft) 100%)",
+  darkCardGradient: "linear-gradient(145deg, var(--brand-deep) 0%, #1d4f91 54%, var(--brand) 100%)",
+  promoGradient: "linear-gradient(160deg, var(--brand-deep), var(--brand))",
+  panel: "var(--surface-strong)",
+  panelSoft: "var(--surface)",
+  panelAlt: "var(--surface-alt)",
+  line: "var(--line)",
+  lineStrong: "var(--line-strong)",
+  ink: "var(--ink)",
+  inkSoft: "var(--ink-soft)",
+  muted: "var(--muted)",
+  brand: "var(--brand)",
+  brandDeep: "var(--brand-deep)",
+  brandTint: "var(--brand-tint)",
+  success: "var(--success)",
+  successSoft: "var(--accent-soft)",
+  danger: "var(--danger)",
+  dangerSoft: "var(--danger-soft)",
+  dangerLine: "var(--danger-line)",
+  shadow: "var(--shadow)",
+  shadowStrong: "var(--shadow-strong)",
+  shadowBrand: "var(--shadow-brand)",
+} as const;
+
 const styles: Record<string, React.CSSProperties> = {
   authPage: {
     minHeight: "100vh",
-    background: "linear-gradient(180deg, #f5f8ff 0%, #eef3ff 100%)",
+    background: themeStyles.pageGradient,
     padding: "32px 20px",
     display: "grid",
     placeItems: "center",
   },
   authGrid: {
     width: "100%",
-    maxWidth: 1240,
+    maxWidth: 1120,
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.1fr) minmax(420px, 0.9fr)",
-    gap: 28,
+    gap: 22,
     alignItems: "stretch",
   },
   authVisual: {
-    background: "linear-gradient(160deg, rgba(37,99,235,0.96), rgba(15,23,42,0.94))",
-    color: "#fff",
-    borderRadius: 36,
-    padding: 36,
-    boxShadow: "0 32px 80px rgba(37,99,235,0.22)",
+    background: themeStyles.authGradient,
+    color: "var(--surface-strong)",
+    borderRadius: 10,
+    padding: 28,
+    
     display: "grid",
-    gap: 22,
+    gap: 18,
     alignContent: "start",
-    minHeight: 680,
+    minHeight: 560,
   },
   authBadge: {
     display: "inline-flex",
@@ -2062,14 +2134,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   authHeadline: {
     margin: 0,
-    fontSize: "clamp(2.3rem, 4vw, 4.6rem)",
-    lineHeight: 1,
-    letterSpacing: "-0.06em",
+    fontSize: "clamp(1.6rem, 2.6vw, 2.2rem)",
+    lineHeight: 1.25,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   authCopy: {
     margin: 0,
-    fontSize: "1.02rem",
-    lineHeight: 1.7,
+    fontSize: "0.94rem",
+    lineHeight: 1.6,
     color: "rgba(255,255,255,0.84)",
   },
   authHighlightGrid: {
@@ -2083,26 +2156,26 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 14,
     alignItems: "center",
     padding: "18px 20px",
-    borderRadius: 24,
+    borderRadius: 14,
     background: "rgba(255,255,255,0.11)",
     border: "1px solid rgba(255,255,255,0.12)",
   },
   authHighlightIcon: {
     width: 40,
     height: 40,
-    borderRadius: 16,
+    borderRadius: 10,
     display: "grid",
     placeItems: "center",
-    background: "#fff",
-    color: "#2f59ff",
+    background: themeStyles.panel,
+    color: themeStyles.brand,
     fontWeight: 900,
   },
   authPanel: {
-    background: "#fff",
-    borderRadius: 36,
-    padding: 32,
-    boxShadow: "0 28px 70px rgba(15,23,42,0.09)",
-    border: "1px solid #dbe5f4",
+    background: themeStyles.panel,
+    borderRadius: 10,
+    padding: 26,
+    
+    border: `1px solid ${themeStyles.line}`,
     position: "relative",
   },
   authPanelBorder: {
@@ -2110,21 +2183,22 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     top: 0,
     right: 0,
-    height: 8,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    background: "#2f59ff",
+    height: 7,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    background: themeStyles.brand,
   },
   authPanelTitle: {
-    margin: "22px 0 8px",
-    fontSize: "2.4rem",
-    lineHeight: 1,
-    letterSpacing: "-0.05em",
-    color: "#20346d",
+    margin: "18px 0 6px",
+    fontSize: "1.5rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
+    color: themeStyles.brandDeep,
   },
   authPanelCopy: {
-    margin: "0 0 24px",
-    color: "#6b7ba5",
+    margin: "0 0 20px",
+    color: themeStyles.inkSoft,
     fontSize: "1.02rem",
   },
   authForm: {
@@ -2133,18 +2207,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fieldLabel: {
     fontWeight: 700,
-    color: "#20346d",
+    color: themeStyles.brandDeep,
     marginTop: 6,
   },
   fieldInput: {
     width: "100%",
     minHeight: 56,
-    borderRadius: 18,
-    border: "1px solid #d6e2ff",
-    background: "#fdfefe",
+    borderRadius: 10,
+    border: `1px solid ${themeStyles.lineStrong}`,
+    background: themeStyles.panel,
     padding: "0 18px",
     fontSize: "1rem",
-    color: "#0f172a",
+    color: themeStyles.ink,
   },
   inlineLinkRow: {
     display: "flex",
@@ -2154,23 +2228,23 @@ const styles: Record<string, React.CSSProperties> = {
   textButton: {
     border: "none",
     background: "transparent",
-    color: "#2f59ff",
+    color: themeStyles.brand,
     fontWeight: 700,
     cursor: "pointer",
   },
   errorNote: {
     padding: "12px 14px",
-    borderRadius: 16,
-    background: "#fff1f2",
-    color: "#be123c",
-    border: "1px solid #fecdd3",
+    borderRadius: 10,
+    background: themeStyles.dangerSoft,
+    color: themeStyles.danger,
+    border: `1px solid ${themeStyles.dangerLine}`,
   },
   primaryAction: {
     minHeight: 54,
-    borderRadius: 18,
+    borderRadius: 10,
     border: "none",
-    background: "#2f59ff",
-    color: "#fff",
+    background: themeStyles.brand,
+    color: "var(--surface-strong)",
     fontWeight: 800,
     fontSize: "1rem",
     cursor: "pointer",
@@ -2178,10 +2252,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   secondaryAction: {
     minHeight: 50,
-    borderRadius: 18,
-    border: "1px solid #d6e2ff",
-    background: "#fff",
-    color: "#20346d",
+    borderRadius: 10,
+    border: `1px solid ${themeStyles.lineStrong}`,
+    background: themeStyles.panel,
+    color: themeStyles.brandDeep,
     fontWeight: 700,
     cursor: "pointer",
     padding: "0 18px",
@@ -2189,7 +2263,7 @@ const styles: Record<string, React.CSSProperties> = {
   linkAction: {
     border: "none",
     background: "transparent",
-    color: "#2f59ff",
+    color: themeStyles.brand,
     fontWeight: 800,
     fontSize: "1rem",
     cursor: "pointer",
@@ -2199,14 +2273,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 12,
-    color: "#8a97b4",
+    color: themeStyles.muted,
     justifyContent: "center",
     marginTop: 6,
   },
   authDividerLine: {
     flex: 1,
     height: 1,
-    background: "#e5ebf8",
+    background: themeStyles.line,
   },
   authQuickRow: {
     display: "grid",
@@ -2215,23 +2289,23 @@ const styles: Record<string, React.CSSProperties> = {
   },
   authSwitch: {
     marginTop: 4,
-    color: "#20346d",
+    color: themeStyles.brandDeep,
     fontWeight: 700,
     textAlign: "center",
   },
   shell: {
     minHeight: "100vh",
     display: "grid",
-    gridTemplateColumns: "280px minmax(0, 1fr)",
-    background: "linear-gradient(180deg, #f7f9ff 0%, #edf2ff 100%)",
+    gridTemplateColumns: "236px minmax(0, 1fr)",
+    background: themeStyles.panelAlt,
   },
   sidebar: {
-    padding: 24,
-    borderRight: "1px solid #dde7fb",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(241,246,255,0.98))",
+    padding: "20px 14px",
+    borderRight: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
     display: "grid",
     alignContent: "start",
-    gap: 18,
+    gap: 6,
     position: "sticky",
     top: 0,
     height: "100vh",
@@ -2240,120 +2314,218 @@ const styles: Record<string, React.CSSProperties> = {
   brandWrap: {
     display: "flex",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
+    padding: "4px 8px 18px",
   },
   brandMark: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    background: "linear-gradient(135deg, #2f59ff, #6a86ff)",
-    color: "#fff",
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    background: themeStyles.brandGradient,
+    color: "var(--surface-strong)",
     display: "grid",
     placeItems: "center",
     fontWeight: 900,
-    boxShadow: "0 20px 48px rgba(47,89,255,0.28)",
+    fontSize: "0.95rem",
   },
   brandTitle: {
     display: "block",
-    color: "#20346d",
+    color: themeStyles.brandDeep,
+    fontSize: "0.95rem",
   },
   brandSub: {
-    color: "#7b8aad",
+    color: themeStyles.muted,
+    fontSize: "0.76rem",
+  },
+  navGroupLabel: {
+    fontSize: "0.68rem",
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    color: themeStyles.muted,
+    padding: "6px 10px 4px",
   },
   navList: {
     display: "grid",
-    gap: 8,
+    gap: 2,
   },
   navItem: {
+    position: "relative",
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    padding: "14px 16px",
-    borderRadius: 18,
+    gap: 10,
+    padding: "9px 10px",
+    borderRadius: 8,
     border: "1px solid transparent",
-    color: "#20346d",
+    color: themeStyles.inkSoft,
+    fontSize: "0.88rem",
   },
   navItemActive: {
-    background: "rgba(47,89,255,0.08)",
-    borderColor: "rgba(47,89,255,0.16)",
+    background: themeStyles.brandTint,
+    borderColor: themeStyles.lineStrong,
+    color: themeStyles.brandDeep,
+    fontWeight: 700,
   },
-  navItemShort: {
+  navItemIcon: {
+    flexShrink: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    display: "grid",
+    placeItems: "center",
+    fontSize: "0.72rem",
     fontWeight: 800,
+    background: themeStyles.panelAlt,
+    color: themeStyles.muted,
+  },
+  navItemIconActive: {
+    background: themeStyles.brand,
+    color: "var(--surface-strong)",
   },
   navItemLabel: {
-    color: "#7b8aad",
+    color: "inherit",
+    flex: 1,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  navItemDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    background: themeStyles.brand,
   },
   sidebarPromo: {
-    marginTop: "auto",
-    borderRadius: 28,
-    padding: 22,
-    color: "#fff",
-    background: "linear-gradient(160deg, #17388f, #2f59ff)",
-    boxShadow: "0 28px 64px rgba(47,89,255,0.26)",
+    marginTop: 16,
+    borderRadius: 12,
+    padding: 14,
+    color: "var(--surface-strong)",
+    background: themeStyles.promoGradient,
     display: "grid",
-    gap: 12,
+    gap: 10,
   },
   sidebarPromoTag: {
-    fontSize: "0.76rem",
+    fontSize: "0.68rem",
     textTransform: "uppercase",
-    letterSpacing: "0.16em",
+    letterSpacing: "0.14em",
     opacity: 0.84,
     fontWeight: 800,
   },
   sidebarPromoTitle: {
     margin: 0,
-    fontSize: "1.4rem",
-    lineHeight: 1.1,
+    fontSize: "1.02rem",
+    lineHeight: 1.25,
   },
   sidebarPromoCopy: {
     margin: 0,
     color: "rgba(255,255,255,0.82)",
-    lineHeight: 1.6,
+    lineHeight: 1.5,
+    fontSize: "0.82rem",
   },
   sidebarPromoButton: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     width: "fit-content",
-    minHeight: 46,
-    padding: "0 16px",
-    borderRadius: 14,
-    background: "#fff",
-    color: "#17388f",
+    minHeight: 34,
+    padding: "0 12px",
+    borderRadius: 8,
+    background: themeStyles.panel,
+    color: themeStyles.brandDeep,
     fontWeight: 800,
+    fontSize: "0.82rem",
   },
   mainArea: {
     minWidth: 0,
-    padding: 28,
+    display: "grid",
+    gridTemplateRows: "56px minmax(0, 1fr)",
+    height: "100vh",
   },
-  topbar: {
+  topNav: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    padding: "0 24px",
+    borderBottom: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    position: "sticky",
+    top: 0,
+    zIndex: 3,
+  },
+  topNavSearch: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 36,
+    padding: "0 12px",
+    borderRadius: 8,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panelAlt,
+    color: themeStyles.muted,
+    flex: "0 1 380px",
+  },
+  topNavSearchIcon: {
+    fontSize: "0.9rem",
+  },
+  topNavSearchText: {
+    fontSize: "0.84rem",
+  },
+  topNavRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+  },
+  mainScroll: {
+    overflowY: "auto",
+    padding: "22px 24px 40px",
+  },
+  mainInner: {
+    maxWidth: 1180,
+    margin: "0 auto",
+    display: "grid",
+    gap: 18,
+  },
+  pageHeaderRow: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 24,
-    marginBottom: 24,
+    alignItems: "flex-end",
+    gap: 18,
+    flexWrap: "wrap",
   },
   pageEyebrow: {
-    color: "#2f59ff",
-    fontWeight: 800,
+    color: themeStyles.brand,
+    fontWeight: 700,
     textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: "0.74rem",
-    marginBottom: 10,
+    letterSpacing: "0.1em",
+    fontSize: "0.7rem",
+    marginBottom: 6,
   },
   pageTitle: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "clamp(2rem, 3vw, 3.4rem)",
-    lineHeight: 1,
-    letterSpacing: "-0.06em",
+    color: themeStyles.brandDeep,
+    fontSize: "1.7rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.02em",
+    fontWeight: 800,
   },
   pageSubtitle: {
-    margin: "10px 0 0",
-    maxWidth: 760,
-    color: "#6f7ea4",
-    lineHeight: 1.7,
+    margin: "6px 0 0",
+    maxWidth: 720,
+    color: themeStyles.inkSoft,
+    lineHeight: 1.55,
+    fontSize: "0.92rem",
   },
   topbarRight: {
     display: "flex",
@@ -2365,178 +2537,228 @@ const styles: Record<string, React.CSSProperties> = {
   topbarAccount: {
     display: "flex",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
+  },
+  accountAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 800,
+    fontSize: "0.82rem",
   },
   accountMeta: {
     display: "grid",
-    gap: 2,
-    textAlign: "right",
-    color: "#20346d",
+    gap: 0,
+    textAlign: "left",
+    color: themeStyles.brandDeep,
+    fontSize: "0.82rem",
+    lineHeight: 1.3,
   },
   mainContent: {
     display: "grid",
-    gap: 22,
+    gap: 16,
   },
   headerPill: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
-    padding: "0 16px",
+    minHeight: 34,
+    padding: "0 12px",
     borderRadius: 999,
-    background: "#e9efff",
-    color: "#2f59ff",
-    fontWeight: 800,
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
+    fontWeight: 700,
+    fontSize: "0.84rem",
+  },
+  statRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 12,
+  },
+  statCard: {
+    display: "grid",
+    gap: 6,
+    padding: "14px 16px",
+    borderRadius: 12,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+  },
+  statLabel: {
+    color: themeStyles.muted,
+    fontSize: "0.76rem",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  statValue: {
+    color: themeStyles.brandDeep,
+    fontSize: "1.6rem",
+    lineHeight: 1,
+    letterSpacing: "-0.02em",
   },
   heroGrid: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.5fr) minmax(340px, 0.9fr)",
-    gap: 20,
+    gridTemplateColumns: "minmax(0, 1.5fr) minmax(300px, 0.9fr)",
+    gap: 14,
   },
   heroPanel: {
-    borderRadius: 32,
-    background: "linear-gradient(135deg, #223a86 0%, #2f59ff 62%, #5f88ff 100%)",
-    color: "#fff",
-    padding: 30,
-    boxShadow: "0 28px 70px rgba(47,89,255,0.26)",
+    borderRadius: 14,
+    background: themeStyles.heroGradient,
+    color: "var(--surface-strong)",
+    padding: "22px 24px",
     display: "grid",
-    gap: 16,
+    gap: 10,
   },
   heroTag: {
     display: "inline-flex",
     width: "fit-content",
-    padding: "10px 16px",
+    padding: "6px 12px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.18)",
-    fontWeight: 800,
+    fontWeight: 700,
     textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: "0.78rem",
+    letterSpacing: "0.1em",
+    fontSize: "0.7rem",
   },
   heroHeading: {
     margin: 0,
-    fontSize: "clamp(2rem, 3vw, 3.4rem)",
-    lineHeight: 1,
-    letterSpacing: "-0.06em",
+    fontSize: "1.7rem",
+    lineHeight: 1.25,
+    letterSpacing: "-0.02em",
+    fontWeight: 800,
+    maxWidth: 480,
   },
   heroCopy: {
     margin: 0,
     color: "rgba(255,255,255,0.84)",
-    lineHeight: 1.7,
+    lineHeight: 1.6,
+    fontSize: "0.9rem",
+    maxWidth: 480,
   },
   heroActionRow: {
     display: "flex",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
+    marginTop: 4,
   },
   primaryActionLink: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
-    padding: "0 18px",
-    borderRadius: 16,
-    background: "#fff",
-    color: "#20346d",
-    fontWeight: 800,
+    minHeight: 38,
+    padding: "0 16px",
+    borderRadius: 8,
+    background: themeStyles.panel,
+    color: themeStyles.brandDeep,
+    fontWeight: 700,
+    fontSize: "0.88rem",
   },
   secondaryActionLink: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
-    padding: "0 18px",
-    borderRadius: 16,
+    minHeight: 38,
+    padding: "0 16px",
+    borderRadius: 8,
     background: "rgba(255,255,255,0.14)",
-    color: "#fff",
+    color: "var(--surface-strong)",
     border: "1px solid rgba(255,255,255,0.22)",
-    fontWeight: 800,
+    fontWeight: 700,
+    fontSize: "0.88rem",
   },
   sideFeatureStack: {
     display: "grid",
-    gap: 18,
+    gap: 12,
   },
   searchModule: {
-    borderRadius: 28,
-    background: "#fff",
-    padding: 24,
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    background: themeStyles.panel,
+    padding: 16,
+    border: `1px solid ${themeStyles.line}`,
     display: "grid",
-    gap: 8,
-    color: "#20346d",
+    gap: 6,
+    color: themeStyles.brandDeep,
+    fontSize: "0.88rem",
   },
   tipCard: {
-    borderRadius: 28,
-    background: "#fff",
-    padding: 24,
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    background: themeStyles.panel,
+    padding: 16,
+    border: `1px solid ${themeStyles.line}`,
     display: "grid",
-    gap: 10,
-    color: "#20346d",
+    gap: 8,
+    color: themeStyles.brandDeep,
+    fontSize: "0.88rem",
   },
   tipTag: {
     width: "fit-content",
-    padding: "8px 12px",
+    padding: "5px 10px",
     borderRadius: 999,
-    background: "#eef3ff",
-    color: "#4164f6",
-    fontWeight: 800,
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
+    fontWeight: 700,
+    fontSize: "0.72rem",
   },
   sectionBlock: {
-    borderRadius: 30,
-    background: "#fff",
-    padding: 24,
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 14,
+    background: themeStyles.panel,
+    padding: 18,
+    border: `1px solid ${themeStyles.line}`,
   },
   sectionHead: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 16,
-    marginBottom: 18,
+    gap: 14,
+    marginBottom: 14,
   },
   sectionTitle: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "1.7rem",
-    lineHeight: 1.1,
-    letterSpacing: "-0.04em",
+    color: themeStyles.brandDeep,
+    fontSize: "1.15rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   linkActionInline: {
-    color: "#2f59ff",
-    fontWeight: 800,
+    color: themeStyles.brand,
+    fontWeight: 700,
+    fontSize: "0.86rem",
   },
   serviceGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 16,
+    gap: 10,
   },
   serviceCard: {
     display: "grid",
-    gap: 12,
-    padding: 18,
-    borderRadius: 24,
-    border: "1px solid #dbe5f4",
-    background: "#f8fbff",
+    gap: 8,
+    padding: 14,
+    borderRadius: 10,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panelSoft,
+    fontSize: "0.88rem",
   },
   serviceIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     display: "grid",
     placeItems: "center",
-    background: "#eef3ff",
-    color: "#2f59ff",
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
     fontWeight: 900,
+    fontSize: "0.9rem",
   },
   dashboardSplit: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.2fr) minmax(340px, 0.8fr)",
-    gap: 20,
+    gap: 16,
   },
   blogRow: {
     display: "grid",
@@ -2544,12 +2766,12 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 18,
     alignItems: "center",
     padding: "16px 0",
-    borderTop: "1px solid #edf2fb",
+    borderTop: `1px solid ${themeStyles.line}`,
   },
   blogVisual: {
-    minHeight: 132,
-    borderRadius: 22,
-    background: "linear-gradient(135deg, #cbd8ff, #f7f9ff)",
+    height: 96,
+    borderRadius: 10,
+    background: "linear-gradient(135deg, var(--brand-tint), var(--surface))",
     position: "relative",
     overflow: "hidden",
   },
@@ -2557,48 +2779,50 @@ const styles: Record<string, React.CSSProperties> = {
     display: "inline-flex",
     padding: "8px 12px",
     borderRadius: 999,
-    background: "#eef3ff",
-    color: "#4164f6",
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
     fontWeight: 800,
   },
   blogTitle: {
-    margin: "12px 0 8px",
-    color: "#20346d",
-    fontSize: "1.6rem",
-    lineHeight: 1.1,
-    letterSpacing: "-0.04em",
+    margin: "10px 0 6px",
+    color: themeStyles.brandDeep,
+    fontSize: "1.1rem",
+    lineHeight: 1.3,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   blogDetail: {
     margin: 0,
-    color: "#6f7ea4",
+    color: themeStyles.inkSoft,
     lineHeight: 1.7,
   },
   stackColumn: {
     display: "grid",
-    gap: 20,
+    gap: 16,
   },
   teleConsultCard: {
-    borderRadius: 30,
-    padding: 28,
-    background: "linear-gradient(145deg, #1f2f68 0%, #253a84 54%, #3950ad 100%)",
-    color: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    background: themeStyles.darkCardGradient,
+    color: "var(--surface-strong)",
     display: "grid",
     gap: 14,
-    boxShadow: "0 24px 60px rgba(31,47,104,0.26)",
+    
   },
   liveChip: {
     width: "fit-content",
     padding: "8px 12px",
     borderRadius: 999,
-    background: "#16a34a",
-    color: "#fff",
+    background: themeStyles.success,
+    color: "var(--surface-strong)",
     fontWeight: 800,
   },
   teleTitle: {
     margin: 0,
-    fontSize: "2rem",
-    lineHeight: 1,
-    letterSpacing: "-0.04em",
+    fontSize: "1.3rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   teleCopy: {
     margin: 0,
@@ -2608,21 +2832,21 @@ const styles: Record<string, React.CSSProperties> = {
   dualPromoGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 18,
+    gap: 14,
   },
   subscriptionTile: {
-    borderRadius: 28,
-    padding: 24,
+    borderRadius: 12,
+    padding: 18,
     background: "linear-gradient(160deg, #3659ef, #4f6fff)",
-    color: "#fff",
+    color: "var(--surface-strong)",
     display: "grid",
     gap: 10,
   },
   emergencyTile: {
-    borderRadius: 28,
-    padding: 24,
+    borderRadius: 12,
+    padding: 18,
     background: "#e03131",
-    color: "#fff",
+    color: "var(--surface-strong)",
     display: "grid",
     gap: 10,
   },
@@ -2637,175 +2861,192 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.74rem",
   },
   heroWideCard: {
-    borderRadius: 30,
-    padding: 26,
+    borderRadius: 14,
+    padding: "18px 22px",
     background: "linear-gradient(140deg, #233776, #344ea4)",
-    color: "#fff",
-    boxShadow: "0 24px 58px rgba(35,55,118,0.24)",
+    color: "var(--surface-strong)",
   },
   bluePill: {
     display: "inline-flex",
-    padding: "8px 12px",
+    padding: "5px 10px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.16)",
-    color: "#fff",
-    fontWeight: 800,
+    color: "var(--surface-strong)",
+    fontWeight: 700,
+    fontSize: "0.72rem",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
   },
   heroHeadingAlt: {
-    margin: "14px 0 12px",
-    fontSize: "2.4rem",
-    lineHeight: 1.05,
-    letterSpacing: "-0.05em",
+    margin: "10px 0 4px",
+    fontSize: "1.4rem",
+    lineHeight: 1.3,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
+    maxWidth: 560,
   },
   heroMetricRow: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
-    marginTop: 12,
+    marginTop: 10,
   },
   metricBadge: {
     display: "inline-flex",
-    padding: "10px 14px",
+    padding: "6px 12px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.14)",
     fontWeight: 700,
+    fontSize: "0.8rem",
   },
   filtersGrid: {
     display: "grid",
-    gap: 14,
+    gap: 12,
   },
   searchInput: {
     width: "100%",
-    minHeight: 56,
-    borderRadius: 18,
-    border: "1px solid #dbe5f4",
-    background: "#f8fbff",
-    padding: "0 18px",
-    fontSize: "1rem",
+    minHeight: 42,
+    borderRadius: 8,
+    border: "1px solid var(--line)",
+    background: "var(--surface)",
+    padding: "0 14px",
+    fontSize: "0.9rem",
   },
   chipRow: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
   },
   filterChip: {
-    minHeight: 42,
-    padding: "0 14px",
+    minHeight: 32,
+    padding: "0 12px",
     borderRadius: 999,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    color: "#6f7ea4",
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--ink-soft)",
     fontWeight: 700,
+    fontSize: "0.82rem",
     cursor: "pointer",
   },
   filterChipActive: {
-    background: "#eef3ff",
-    color: "#2f59ff",
-    borderColor: "#bfcfff",
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
+    borderColor: "var(--line-strong)",
   },
   doctorGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 18,
+    gap: 14,
   },
   doctorCard: {
     display: "grid",
-    gridTemplateColumns: "180px minmax(0, 1fr)",
-    gap: 18,
-    borderRadius: 28,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    padding: 18,
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    gridTemplateColumns: "88px minmax(0, 1fr)",
+    gap: 12,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    padding: 12,
+    boxShadow: "0 10px 28px rgba(32,52,109,0.06)",
+    alignItems: "center",
   },
   doctorAvatarPanel: {
-    minHeight: 190,
-    borderRadius: 22,
-    background: "linear-gradient(135deg, #cbd8ff, #f7f9ff)",
+    minHeight: 88,
+    aspectRatio: "1 / 1",
+    borderRadius: 14,
+    background: "linear-gradient(135deg, #cbd8ff, var(--surface))",
     width: "100%",
     display: "grid",
     placeItems: "center",
     overflow: "hidden",
     position: "relative",
+    justifySelf: "start",
+    alignSelf: "center",
+    border: "1px solid var(--line)",
+  },
+  doctorAvatarImage: {
+    objectPosition: "center top",
   },
   doctorAvatarFallback: {
     color: "#4164f6",
-    fontSize: "2.4rem",
+    fontSize: "1.85rem",
     fontWeight: 900,
     letterSpacing: "-0.06em",
   },
   doctorBody: {
     display: "grid",
     alignContent: "start",
-    gap: 8,
+    gap: 5,
   },
   doctorTopline: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 12,
+    gap: 8,
   },
   doctorName: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "1.8rem",
-    lineHeight: 1.05,
+    color: "var(--brand-deep)",
+    fontSize: "1.15rem",
+    lineHeight: 1.15,
     letterSpacing: "-0.04em",
   },
   verifiedBadge: {
     display: "inline-flex",
-    padding: "8px 12px",
+    padding: "6px 10px",
     borderRadius: 999,
-    background: "#eefaf2",
-    color: "#16a34a",
+    background: "var(--accent-soft)",
+    color: "var(--success)",
     fontWeight: 800,
+    fontSize: "0.8rem",
   },
   doctorSpecialty: {
-    color: "#2f59ff",
+    color: "var(--brand)",
     fontWeight: 800,
-    fontSize: "1.2rem",
+    fontSize: "0.95rem",
   },
   doctorMeta: {
     margin: 0,
-    color: "#6f7ea4",
-    lineHeight: 1.6,
+    color: "var(--ink-soft)",
+    lineHeight: 1.45,
+    fontSize: "0.94rem",
   },
   doctorFooter: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
-    marginTop: 8,
-    color: "#20346d",
+    gap: 8,
+    marginTop: 4,
+    color: "var(--brand-deep)",
   },
   availableLabel: {
     display: "inline-flex",
-    padding: "8px 12px",
+    padding: "6px 10px",
     borderRadius: 999,
-    background: "#eafbf4",
-    color: "#16a34a",
+    background: "var(--accent-soft)",
+    color: "var(--success)",
     fontWeight: 800,
+    fontSize: "0.8rem",
   },
   detailHeroGrid: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)",
-    gap: 20,
+    gap: 16,
   },
   profileCard: {
-    borderRadius: 30,
-    padding: 24,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 18,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
-    gridTemplateColumns: "180px minmax(0, 1fr) 140px",
-    gap: 18,
+    gridTemplateColumns: "144px minmax(0, 1fr) 128px",
+    gap: 14,
     alignItems: "start",
   },
   profileImage: {
-    minHeight: 210,
-    borderRadius: 24,
-    background: "linear-gradient(135deg, #cbd8ff, #f7f9ff)",
+    height: 144,
+    borderRadius: 10,
+    background: "linear-gradient(135deg, #cbd8ff, var(--surface))",
     width: "100%",
     display: "grid",
     placeItems: "center",
@@ -2824,10 +3065,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   profileName: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "2.2rem",
-    lineHeight: 1,
-    letterSpacing: "-0.05em",
+    color: "var(--brand-deep)",
+    fontSize: "1.5rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   profileStats: {
     display: "flex",
@@ -2838,14 +3080,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     justifyItems: "end",
     gap: 4,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   aboutCard: {
-    borderRadius: 30,
-    padding: 24,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 18,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 16,
   },
@@ -2855,13 +3097,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 14,
   },
   infoStatCard: {
-    borderRadius: 20,
-    padding: 18,
-    background: "#f8fbff",
-    border: "1px solid #e7eefb",
+    borderRadius: 10,
+    padding: 14,
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
     display: "grid",
     gap: 8,
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   planGrid: {
     display: "grid",
@@ -2872,29 +3114,29 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 16,
-    padding: 18,
-    borderRadius: 22,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    color: "#20346d",
+    padding: 14,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--brand-deep)",
     cursor: "pointer",
   },
   planChoiceActive: {
-    borderColor: "#2f59ff",
-    background: "#eef3ff",
+    borderColor: "var(--brand)",
+    background: "var(--brand-tint)",
   },
   planAmount: {
     fontWeight: 900,
-    color: "#2f59ff",
+    color: "var(--brand)",
   },
   checkoutBar: {
     position: "sticky",
     bottom: 18,
     zIndex: 2,
-    borderRadius: 24,
-    padding: 18,
+    borderRadius: 10,
+    padding: 14,
     background: "rgba(255,255,255,0.96)",
-    border: "1px solid #dbe5f4",
+    border: "1px solid var(--line)",
     boxShadow: "0 18px 48px rgba(32,52,109,0.12)",
     display: "flex",
     alignItems: "center",
@@ -2903,20 +3145,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   checkoutTitle: {
     display: "block",
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   checkoutMeta: {
     display: "block",
     marginTop: 6,
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   twoColumnGrid: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) minmax(360px, 0.85fr)",
-    gap: 20,
+    gridTemplateColumns: "minmax(0, 1.15fr) minmax(320px, 0.85fr)",
+    gap: 16,
   },
   onlineMarker: {
-    color: "#2f59ff",
+    color: "var(--brand)",
     fontWeight: 800,
   },
   specialtyGrid: {
@@ -2926,10 +3168,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   specialtyCard: {
     minHeight: 130,
-    borderRadius: 22,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    color: "#20346d",
+    borderRadius: 12,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--brand-deep)",
     padding: 16,
     display: "grid",
     gap: 10,
@@ -2940,35 +3182,35 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   specialtyCardActive: {
-    borderColor: "#2f59ff",
-    background: "#eef3ff",
-    color: "#2f59ff",
+    borderColor: "var(--brand)",
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
   },
   specialtyIcon: {
     width: 44,
     height: 44,
-    borderRadius: 16,
+    borderRadius: 10,
     display: "grid",
     placeItems: "center",
-    background: "#fff",
-    border: "1px solid #dbe5f4",
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
   },
   textArea: {
     width: "100%",
     minHeight: 150,
-    borderRadius: 18,
-    border: "1px solid #d6e2ff",
-    background: "#fff",
+    borderRadius: 10,
+    border: "1px solid var(--line-strong)",
+    background: "var(--surface-strong)",
     padding: 18,
     fontSize: "1rem",
     resize: "vertical",
   },
   noticeCard: {
-    borderRadius: 18,
+    borderRadius: 10,
     padding: 16,
-    background: "#eef3ff",
-    color: "#20346d",
-    border: "1px solid #d6e2ff",
+    background: "var(--brand-tint)",
+    color: "var(--brand-deep)",
+    border: "1px solid var(--line-strong)",
   },
   tabRow: {
     display: "flex",
@@ -2978,24 +3220,24 @@ const styles: Record<string, React.CSSProperties> = {
   tabButton: {
     minHeight: 48,
     padding: "0 18px",
-    borderRadius: 16,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    color: "#6f7ea4",
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--ink-soft)",
     fontWeight: 800,
     cursor: "pointer",
   },
   tabButtonActive: {
-    background: "#2f59ff",
-    color: "#fff",
-    borderColor: "#2f59ff",
+    background: "var(--brand)",
+    color: "var(--surface-strong)",
+    borderColor: "var(--brand)",
   },
   emptyPanel: {
-    borderRadius: 30,
-    padding: 40,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 28,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     textAlign: "center",
     display: "grid",
     gap: 12,
@@ -3003,41 +3245,42 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyTitle: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "2rem",
-    lineHeight: 1.05,
-    letterSpacing: "-0.04em",
+    color: "var(--brand-deep)",
+    fontSize: "1.3rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   emptyCopy: {
     margin: 0,
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   appointmentGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 18,
+    gap: 14,
   },
   appointmentCard: {
-    borderRadius: 24,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    padding: 18,
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    padding: 14,
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 8,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   profileLayout: {
     display: "grid",
     gridTemplateColumns: "320px minmax(0, 1fr)",
-    gap: 20,
+    gap: 16,
   },
   profileOverview: {
-    borderRadius: 30,
-    padding: 28,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 20,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 14,
     justifyItems: "center",
@@ -3047,24 +3290,25 @@ const styles: Record<string, React.CSSProperties> = {
   profileMonogram: {
     width: 100,
     height: 100,
-    borderRadius: 28,
+    borderRadius: 10,
     display: "grid",
     placeItems: "center",
-    background: "#eef3ff",
-    color: "#2f59ff",
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
     fontSize: "2rem",
     fontWeight: 900,
   },
   profileOverviewTitle: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "2rem",
-    lineHeight: 1.05,
-    letterSpacing: "-0.04em",
+    color: "var(--brand-deep)",
+    fontSize: "1.3rem",
+    lineHeight: 1.2,
+    letterSpacing: "-0.01em",
+    fontWeight: 800,
   },
   profileOverviewCopy: {
     margin: 0,
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   menuCard: {
     display: "flex",
@@ -3072,53 +3316,53 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 16,
     padding: "18px 0",
-    borderTop: "1px solid #edf2fb",
-    color: "#20346d",
+    borderTop: "1px solid var(--line)",
+    color: "var(--brand-deep)",
   },
   productGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 18,
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 14,
   },
   productCard: {
-    borderRadius: 24,
-    border: "1px solid #dbe5f4",
-    background: "#fff",
-    padding: 18,
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    padding: 14,
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 12,
   },
   productVisual: {
-    minHeight: 180,
-    borderRadius: 22,
-    border: "1px solid #edf2fb",
-    background: "#f8fbff",
+    height: 128,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface)",
   },
   visualInitials: {
-    color: "#2f59ff",
+    color: "var(--brand)",
     fontSize: "2.4rem",
     fontWeight: 900,
     letterSpacing: "-0.06em",
   },
   productTitle: {
-    color: "#20346d",
+    color: "var(--brand-deep)",
     fontSize: "1.4rem",
     lineHeight: 1.15,
     letterSpacing: "-0.04em",
   },
   productMeta: {
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   priceRow: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     flexWrap: "wrap",
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   stockText: {
-    color: "#16a34a",
+    color: "var(--success)",
     fontWeight: 800,
   },
   quantityBox: {
@@ -3128,24 +3372,24 @@ const styles: Record<string, React.CSSProperties> = {
     width: "fit-content",
     minHeight: 50,
     padding: "0 18px",
-    borderRadius: 16,
-    border: "1px solid #bfd0ff",
-    color: "#20346d",
+    borderRadius: 10,
+    border: "1px solid var(--line-strong)",
+    color: "var(--brand-deep)",
     fontWeight: 800,
   },
   quantityButton: {
     border: "none",
     background: "transparent",
-    color: "#2f59ff",
+    color: "var(--brand)",
     fontSize: "1.8rem",
     lineHeight: 1,
     cursor: "pointer",
   },
   pharmacyHero: {
-    borderRadius: 30,
-    padding: 24,
+    borderRadius: 12,
+    padding: 18,
     background: "#2a45b8",
-    color: "#fff",
+    color: "var(--surface-strong)",
     display: "grid",
     gap: 16,
   },
@@ -3156,10 +3400,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
   pharmacySearch: {
-    minHeight: 62,
-    borderRadius: 18,
-    background: "#fff",
-    color: "#6f7ea4",
+    minHeight: 52,
+    borderRadius: 10,
+    background: "var(--surface-strong)",
+    color: "var(--ink-soft)",
     display: "flex",
     alignItems: "center",
     padding: "0 20px",
@@ -3167,42 +3411,42 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cartLayout: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) 360px",
-    gap: 20,
+    gridTemplateColumns: "minmax(0, 1.15fr) 320px",
+    gap: 16,
     alignItems: "start",
   },
   cartLine: {
     display: "grid",
-    gridTemplateColumns: "112px minmax(0, 1fr) auto",
-    gap: 16,
+    gridTemplateColumns: "96px minmax(0, 1fr) auto",
+    gap: 14,
     alignItems: "start",
-    padding: "18px 0",
-    borderTop: "1px solid #edf2fb",
+    padding: "14px 0",
+    borderTop: "1px solid var(--line)",
   },
   cartImage: {
-    minHeight: 112,
-    borderRadius: 20,
-    border: "1px solid #edf2fb",
-    background: "#f8fbff",
+    height: 88,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface)",
   },
   cartContent: {
     display: "grid",
     gap: 8,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   removeButton: {
     border: "none",
     background: "transparent",
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
     fontWeight: 800,
     cursor: "pointer",
   },
   summaryPanel: {
-    borderRadius: 30,
-    padding: 24,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 18,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 14,
     position: "sticky",
@@ -3213,7 +3457,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   summaryTotal: {
     display: "flex",
@@ -3222,13 +3466,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     paddingTop: 18,
     marginTop: 6,
-    borderTop: "1px solid #edf2fb",
-    color: "#20346d",
+    borderTop: "1px solid var(--line)",
+    color: "var(--brand-deep)",
     fontWeight: 900,
     fontSize: "1.5rem",
   },
   greenText: {
-    color: "#16a34a",
+    color: "var(--success)",
   },
   strikeText: {
     textDecoration: "line-through",
@@ -3237,26 +3481,26 @@ const styles: Record<string, React.CSSProperties> = {
   orderGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 18,
+    gap: 14,
   },
   orderCard: {
-    borderRadius: 24,
-    padding: 18,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 10,
+    padding: 14,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 8,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   callbackPanel: {
     width: "100%",
     maxWidth: 720,
-    borderRadius: 30,
-    padding: 32,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 12,
+    padding: 24,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     textAlign: "center",
     display: "grid",
     gap: 18,
@@ -3264,47 +3508,48 @@ const styles: Record<string, React.CSSProperties> = {
   },
   serviceTileGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 18,
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 12,
   },
   infoTileCard: {
-    borderRadius: 24,
-    padding: 20,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    borderRadius: 10,
+    padding: 14,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
-    gap: 10,
-    color: "#20346d",
+    gap: 8,
+    color: "var(--brand-deep)",
   },
   tileVisual: {
-    minHeight: 220,
-    borderRadius: 22,
-    border: "1px solid #edf2fb",
-    background: "#f8fbff",
+    height: 120,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
+    background: "var(--surface)",
   },
   staffVisual: {
-    minHeight: 220,
-    borderRadius: 22,
-    border: "1px solid #edf2fb",
+    height: 120,
+    borderRadius: 10,
+    border: "1px solid var(--line)",
     background: "#f2f6ff",
   },
   tileTitle: {
     margin: 0,
-    color: "#20346d",
-    fontSize: "1.45rem",
-    lineHeight: 1.1,
+    color: "var(--brand-deep)",
+    fontSize: "1.18rem",
+    lineHeight: 1.15,
     letterSpacing: "-0.04em",
   },
   serviceNameText: {
-    color: "#20346d",
-    fontSize: "1.05rem",
+    color: "var(--brand-deep)",
+    fontSize: "0.95rem",
     fontWeight: 800,
   },
   tileCopy: {
     margin: 0,
-    color: "#6f7ea4",
-    lineHeight: 1.6,
+    color: "var(--ink-soft)",
+    lineHeight: 1.5,
+    fontSize: "0.92rem",
   },
   tileMetaGrid: {
     display: "flex",
@@ -3312,7 +3557,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 12,
     flexWrap: "wrap",
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
   },
   tileFooter: {
     display: "flex",
@@ -3320,48 +3565,48 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 12,
     marginTop: 4,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   priceStack: {
     display: "grid",
     gap: 4,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   stackList: {
     display: "grid",
-    gap: 14,
+    gap: 12,
   },
   stepCard: {
-    borderRadius: 22,
-    padding: 18,
-    background: "#f8fbff",
-    border: "1px solid #e7eefb",
+    borderRadius: 10,
+    padding: 14,
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
     display: "grid",
     gap: 8,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   metricsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 16,
+    gap: 12,
   },
   metricCard: {
-    borderRadius: 22,
-    padding: 20,
-    background: "#f8fbff",
-    border: "1px solid #e7eefb",
+    borderRadius: 10,
+    padding: 16,
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
     display: "grid",
     gap: 10,
   },
   metricLabel: {
-    color: "#6f7ea4",
+    color: "var(--ink-soft)",
     fontWeight: 700,
   },
   metricValue: {
-    color: "#20346d",
-    fontSize: "2rem",
+    color: "var(--brand-deep)",
+    fontSize: "1.6rem",
     lineHeight: 1,
-    letterSpacing: "-0.05em",
+    letterSpacing: "-0.02em",
   },
   planCardGrid: {
     display: "grid",
@@ -3369,17 +3614,17 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 18,
   },
   membershipCard: {
-    borderRadius: 26,
+    borderRadius: 14,
     padding: 22,
-    background: "#fff",
-    border: "1px solid #dbe5f4",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.08)",
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
     display: "grid",
     gap: 12,
-    color: "#20346d",
+    color: "var(--brand-deep)",
   },
   membershipPrice: {
-    color: "#2f59ff",
+    color: "var(--brand)",
     fontSize: "1.7rem",
     fontWeight: 900,
     letterSpacing: "-0.04em",
@@ -3390,10 +3635,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 14,
   },
   topicChipCard: {
-    borderRadius: 18,
+    borderRadius: 10,
     padding: "16px 18px",
-    background: "#eef3ff",
-    color: "#20346d",
+    background: "var(--brand-tint)",
+    color: "var(--brand-deep)",
     fontWeight: 800,
   },
   formStack: {

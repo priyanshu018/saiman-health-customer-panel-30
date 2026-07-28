@@ -1,5 +1,5 @@
-import { WebSupportScreen } from "@/components/web-app-experience";
+import { CustomerSupportHubPage } from "@/components/customer-site-pages";
 
 export default function SupportPage() {
-  return <WebSupportScreen />;
+  return <CustomerSupportHubPage />;
 }
