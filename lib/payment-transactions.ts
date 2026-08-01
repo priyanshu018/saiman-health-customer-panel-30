@@ -276,7 +276,9 @@ export type BookingRef =
   | { kind: "lab_booking"; approvalId: string }
   | { kind: "hospital_booking"; approvalId: string }
   | { kind: "ctmri_booking"; approvalId: string }
-  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" };
+  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" }
+  | { kind: "doctor_consultation"; doctorId: string; plan: "single" | "monthly" | "yearly" }
+  | { kind: "pharmacy_order"; items: Array<{ productId: string; quantity: number }> };
 
 export type BookingPricing = {
   amount: number;
@@ -311,21 +313,58 @@ export async function computeBookingPricing(client: SupabaseClient, ref: Booking
     return { amount, breakdown: { itemPrice: amount, deliveryFee: 0, securityDeposit: 0 } };
   }
 
+  if (ref.kind === "rental_order") {
+    const { data, error } = await client
+      .from("rental_equipment_approvals")
+      .select("price,weekly_price,monthly_price,deposit,status")
+      .eq("id", ref.approvalId)
+      .single();
+    if (error || !data || String(data.status) !== "Approved") throw new Error("This rental equipment is no longer available.");
+
+    const itemPrice =
+      ref.plan === "weekly"
+        ? Number(data.weekly_price || data.price || 0)
+        : ref.plan === "monthly" || ref.plan === "quarterly"
+          ? Number(data.monthly_price || data.price || 0)
+          : Number(data.price || 0);
+    const securityDeposit = Number(data.deposit || 0);
+    const amount = itemPrice + RENTAL_DELIVERY_FEE + securityDeposit;
+
+    return { amount, breakdown: { itemPrice, deliveryFee: RENTAL_DELIVERY_FEE, securityDeposit } };
+  }
+
+  if (ref.kind === "doctor_consultation") {
+    const { data, error } = await client
+      .from("users")
+      .select("fee,role,verification_status")
+      .eq("id", ref.doctorId)
+      .single();
+    if (error || !data || data.role !== "doctor" || data.verification_status !== "approved") {
+      throw new Error("This doctor is no longer available.");
+    }
+    const baseFee = Number(data.fee || 0);
+    const multiplier = ref.plan === "monthly" ? 3 : ref.plan === "yearly" ? 10 : 1;
+    const amount = baseFee * multiplier;
+    return { amount, breakdown: { itemPrice: amount, deliveryFee: 0, securityDeposit: 0 } };
+  }
+
+  // pharmacy_order
+  const productIds = ref.items.map((item) => item.productId);
   const { data, error } = await client
-    .from("rental_equipment_approvals")
-    .select("price,weekly_price,monthly_price,deposit,status")
-    .eq("id", ref.approvalId)
-    .single();
-  if (error || !data || String(data.status) !== "Approved") throw new Error("This rental equipment is no longer available.");
+    .from("pharmacy_product_approvals")
+    .select("id,price,status")
+    .in("id", productIds)
+    .eq("status", "Approved");
+  if (error) throw new Error(error.message);
 
-  const itemPrice =
-    ref.plan === "weekly"
-      ? Number(data.weekly_price || data.price || 0)
-      : ref.plan === "monthly" || ref.plan === "quarterly"
-        ? Number(data.monthly_price || data.price || 0)
-        : Number(data.price || 0);
-  const securityDeposit = Number(data.deposit || 0);
-  const amount = itemPrice + RENTAL_DELIVERY_FEE + securityDeposit;
+  const priceById = new Map((data || []).map((row) => [String(row.id), Number(row.price || 0)]));
+  let itemPrice = 0;
+  for (const item of ref.items) {
+    const price = priceById.get(item.productId);
+    if (price === undefined) throw new Error("One or more items in your cart are no longer available.");
+    const quantity = Math.max(1, Math.round(Number(item.quantity) || 0));
+    itemPrice += price * quantity;
+  }
 
-  return { amount, breakdown: { itemPrice, deliveryFee: RENTAL_DELIVERY_FEE, securityDeposit } };
+  return { amount: itemPrice, breakdown: { itemPrice, deliveryFee: 0, securityDeposit: 0 } };
 }

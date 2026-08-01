@@ -25,15 +25,29 @@ type CreateOrderBody = {
   } | null;
   metadata?: Record<string, unknown>;
   // When present, the server re-derives `amount` from the admin-approved
-  // catalog row and ignores whatever amount the browser sent. Only the
-  // lab/ctmri/hospital/rental booking flows send this — doctor_consultation
-  // and pharmacy_order are unaffected (unchanged from the earlier P0 fix).
+  // catalog/doctor/product data and ignores whatever amount the browser
+  // sent. All six priced service types (doctor, pharmacy, lab, ctmri,
+  // hospital, rental) send this — ambulance_booking has no fixed catalog
+  // price and is the only type still trusting the client-sent amount.
   bookingRef?: BookingRef;
 };
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
+
+// Service types with a real admin-approved/catalog price. A request for any
+// of these MUST carry a bookingRef so the amount is re-derived server-side —
+// never trust a client-sent amount for a priced service. ambulance_booking
+// is intentionally excluded: it has no fixed catalog price to re-derive from.
+const PRICED_SERVICE_TYPES: TransactionServiceType[] = [
+  "doctor_consultation",
+  "pharmacy_order",
+  "lab_booking",
+  "hospital_booking",
+  "ctmri_booking",
+  "rental_order",
+];
 
 export async function POST(request: Request) {
   try {
@@ -46,7 +60,26 @@ export async function POST(request: Request) {
       return jsonError("Missing payment redirect URI.", 400);
     }
 
-    const user = await getAuthenticatedUser(request.headers.get("authorization"));
+    // The Razorpay checkout page and the customer's own browser eventually
+    // navigate to redirectUri — it must stay on this app's own origin, never
+    // an attacker-supplied external URL (open-redirect guard).
+    const requestOrigin = new URL(request.url).origin;
+    let redirectOrigin: string;
+    try {
+      redirectOrigin = new URL(redirectUri).origin;
+    } catch {
+      return jsonError("Invalid payment redirect URI.", 400);
+    }
+    if (redirectOrigin !== requestOrigin) {
+      return jsonError("Payment redirect URI must be on this app's origin.", 400);
+    }
+
+    if (PRICED_SERVICE_TYPES.includes(body.serviceType) && !body.bookingRef) {
+      return jsonError("This service requires a priced booking reference.", 400);
+    }
+
+    const authHeader = request.headers.get("authorization");
+    const user = await getAuthenticatedUser(authHeader);
     const client = createSupabaseAdminClient();
 
     let amount = Number(body.amount);
@@ -77,11 +110,17 @@ export async function POST(request: Request) {
       },
     });
 
+    // The checkout page is reached via a plain top-level browser navigation
+    // (window.location.assign), which can't carry an Authorization header —
+    // so the bearer token is passed as a one-time-use query param instead,
+    // and the checkout route re-validates it server-side against the
+    // transaction's own patient_id before showing any payment/customer data.
     const url = new URL(request.url);
     url.pathname = "/api/payments/checkout";
     url.search = "";
     url.searchParams.set("transactionId", transaction.id);
     url.searchParams.set("redirectUri", redirectUri);
+    url.searchParams.set("token", String(authHeader || "").replace(/^Bearer\s+/i, ""));
 
     return NextResponse.json({
       transactionId: transaction.id,

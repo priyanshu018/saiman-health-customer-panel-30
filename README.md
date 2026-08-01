@@ -77,10 +77,16 @@ For public browsing, run the updated SQL in [sql/public-browse-policies.sql](/Us
 - Design tokens (colors, typography scale, spacing, radius, shadows, containers, motion) live in `app/globals.css` under `:root`. Change brand colors there, not in individual components — every screen consumes these variables.
 - See `APP_PROCESS_LOG.md`'s "Design System" section for what was and wasn't migrated to the new shell/token system.
 
-## Service booking payments (lab, CT/MRI, hospital, rental)
+## Service booking payments (all six priced service types)
 
-- `app/api/payments/create-order` accepts an optional `bookingRef` — when present, the server re-derives the price from the admin-approved catalog row (`lab_test_approvals`, `ctmri_service_approvals`, `hospital_service_approvals`, or `rental_equipment_approvals`) via `computeBookingPricing()` in `lib/payment-transactions.ts`, ignoring whatever amount the browser sent. Doctor/pharmacy checkout doesn't send `bookingRef`, so that flow is unaffected.
-- `app/api/service-bookings/fulfill` is a single, idempotent Route Handler that creates the durable booking row (lab/ctmri/hospital/rental) after payment verification. It's safe to call more than once for the same transaction — if already fulfilled, it returns the existing booking instead of creating a duplicate.
+- `app/api/payments/create-order` **requires** a `bookingRef` for every priced service type (`doctor_consultation`, `pharmacy_order`, `lab_booking`, `hospital_booking`, `ctmri_booking`, `rental_order`) — the route rejects the request outright if one is missing. The server re-derives the price server-side via `computeBookingPricing()` in `lib/payment-transactions.ts` (from the `users.fee` column for doctors, `pharmacy_product_approvals` for pharmacy orders, or the admin-approved catalog row for the other four) and always ignores whatever `amount` the browser sent. Only `ambulance_booking` still trusts a client-sent amount, since it has no fixed catalog price yet.
+- `app/api/payments/checkout` requires a short-lived bearer token (passed as a one-time query param by `create-order`, since the checkout page is reached via a plain top-level browser redirect that can't carry an `Authorization` header) and verifies the transaction's `patient_id` matches the token's user before rendering any payment/customer details. `redirectUri` must be same-origin on both `create-order` and `checkout` — this is an open-redirect guard, not a UX choice.
+- `app/api/payments/verify` and `app/api/payments/link-booking` both check `transaction.patient_id === user.id` before acting — a transaction can only be verified or linked by the customer who created it.
+- `app/api/service-bookings/fulfill` is a single, idempotent Route Handler that creates the durable booking row (lab/ctmri/hospital/rental) after payment verification. It's safe to call more than once for the same transaction — if already fulfilled, it returns the existing booking instead of creating a duplicate. For hospital/ctmri/rental it also rejects a fulfillment request whose `approvalId`/`equipmentId` doesn't match what was actually priced at `create-order` time — this closes a real "price a cheap service, fulfill an expensive one" gap. The same check isn't yet possible for `lab_booking`, since its booking payload has no field that maps back to the priced `approvalId` (see `APP_PROCESS_LOG.md`).
+
+## Site URL (metadata, sitemap, robots)
+
+- Set `NEXT_PUBLIC_SITE_URL` in `.env` to your production domain (e.g. `https://app.saimanhealthcare.com`) — `app/sitemap.ts` and `app/robots.ts` both use it to build absolute URLs. It falls back to a placeholder domain if unset, so update it before deploying.
 
 ## Learn More
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseAdminClient, fetchCustomerTransaction, getRazorpayPublicKey } from "@/lib/payment-transactions";
+import { createSupabaseAdminClient, fetchCustomerTransaction, getAuthenticatedUser, getRazorpayPublicKey } from "@/lib/payment-transactions";
 
 function escapeHtml(value: string) {
   return value
@@ -25,12 +25,33 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const transactionId = url.searchParams.get("transactionId")?.trim();
     const redirectUri = url.searchParams.get("redirectUri")?.trim();
-    if (!transactionId || !redirectUri) {
+    const token = url.searchParams.get("token")?.trim();
+    if (!transactionId || !redirectUri || !token) {
       return htmlResponse("<h1>Invalid payment request.</h1>");
+    }
+
+    // redirectUri must stay on this route's own origin — never an
+    // attacker-supplied external URL (open-redirect guard).
+    let redirectOrigin: string;
+    try {
+      redirectOrigin = new URL(redirectUri).origin;
+    } catch {
+      return htmlResponse("<h1>Invalid payment request.</h1>");
+    }
+    if (redirectOrigin !== url.origin) {
+      return htmlResponse("<h1>Invalid payment request.</h1>");
+    }
+
+    const user = await getAuthenticatedUser(`Bearer ${token}`).catch(() => null);
+    if (!user) {
+      return htmlResponse("<h1>Your session has expired. Please go back and try again.</h1>");
     }
 
     const client = createSupabaseAdminClient();
     const transaction = await fetchCustomerTransaction(client, transactionId);
+    if (transaction.patient_id !== user.id) {
+      return htmlResponse("<h1>This payment link is not valid for the current account.</h1>");
+    }
     if (!transaction.razorpay_order_id) {
       return htmlResponse("<h1>Payment order was not created.</h1>");
     }

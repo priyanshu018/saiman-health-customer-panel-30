@@ -75,8 +75,30 @@ export async function POST(request: Request) {
     }
 
     const breakdown = (transaction.metadata?.pricingBreakdown || {}) as { itemPrice?: number; deliveryFee?: number; securityDeposit?: number };
+    const bookingRef = transaction.metadata?.bookingRef as { approvalId?: string } | undefined;
     let entityId: string;
     let entityType: string;
+
+    // The transaction was priced server-side against bookingRef.approvalId at
+    // create-order time. Reject any fulfillment attempt whose booking payload
+    // references a different approval/equipment than what was actually
+    // priced and paid for — otherwise a customer could pay for a cheap
+    // service and fulfill a booking row for an expensive one.
+    if (
+      bookingRef?.approvalId &&
+      (transaction.service_type === "hospital_booking" || transaction.service_type === "ctmri_booking")
+    ) {
+      const booking = body.booking as ProviderServiceBookingPayload;
+      if (booking.approvalId !== bookingRef.approvalId) {
+        return jsonError("This booking no longer matches what was paid for.", 400);
+      }
+    }
+    if (bookingRef?.approvalId && transaction.service_type === "rental_order") {
+      const booking = body.booking as RentalOrderPayload;
+      if (booking.equipmentId !== bookingRef.approvalId) {
+        return jsonError("This booking no longer matches what was paid for.", 400);
+      }
+    }
 
     if (transaction.service_type === "lab_booking") {
       const booking = body.booking as LabBookingPayload;

@@ -180,6 +180,23 @@ function text(value: unknown, fallback = "") {
   return String(value || "").trim() || fallback;
 }
 
+// Admin-entered catalog names sometimes come through as ALL CAPS or
+// all-lowercase raw strings ("TONSILLECTOMY", "rhinoplasty"). Normalize to
+// title case for display without touching the underlying data — never shown
+// to the customer as a raw, inconsistent-cased string.
+function toTitleCase(value: string) {
+  if (!value) return value;
+  // Leave already-mixed-case strings alone (e.g. "MRI", "CT Scan") so we
+  // don't mangle legitimate acronyms — only normalize strings that are
+  // entirely upper or entirely lower case.
+  if (value !== value.toUpperCase() && value !== value.toLowerCase()) return value;
+  return value
+    .toLowerCase()
+    .split(" ")
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 function numberValue(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -218,7 +235,7 @@ function formatAvailability(row: Record<string, unknown>) {
     row.chat_available_time ? "Chat" : "",
   ].filter(Boolean);
 
-  return items.length ? items : ["Consultation"];
+  return items.length ? items : ["Contact for availability"];
 }
 
 type PharmacyApprovalRow = {
@@ -384,7 +401,7 @@ export async function fetchApprovedDoctors() {
       name: text(row.name, "Doctor"),
       avatarUrl: text(row.avatar_url) || null,
       specialty: text(row.specialization, "General Physician"),
-      hospital: text(row.hospital, "Online consultation"),
+      hospital: text(row.hospital, "Hospital not specified"),
       city: text(row.city, "Location not specified"),
       experience: numberValue(row.experience),
       fee: numberValue(row.fee, 500),
@@ -631,7 +648,7 @@ export async function fetchApprovedHospitalServices() {
         providerName: text(provider.hospital_name, text(provider.name, "Hospital")),
         providerAddress: text(provider.hospital_address, "Address available after booking"),
         providerCity: text(provider.city, "Location not specified"),
-        serviceName: text(service.name, "Hospital Service"),
+        serviceName: toTitleCase(text(service.name, "Hospital Service")),
         category: text(service.category, "General"),
         description: text(service.description),
         price: numberValue(row.price, numberValue(service.base_price, 0)),
@@ -686,7 +703,7 @@ export async function fetchApprovedCtmriServices() {
         providerName: text(provider.center_name, text(provider.name, "Imaging Center")),
         providerAddress: text(provider.center_address, "Address available after booking"),
         providerCity: text(provider.city, "Location not specified"),
-        serviceName: text(service.name, "Imaging Service"),
+        serviceName: toTitleCase(text(service.name, "Imaging Service")),
         category: text(service.category, "General"),
         description: text(service.description),
         price: numberValue(row.price, numberValue(service.base_price, 0)),
@@ -908,7 +925,7 @@ export async function fetchPatientAppointments(patientId: string) {
     fee: numberValue(row.fee, 0),
     doctorName: text(doctor?.name, "Doctor"),
     doctorSpecialty: text(doctor?.specialization, "General Physician"),
-    hospital: text(doctor?.hospital, "Online consultation"),
+    hospital: text(doctor?.hospital, "Hospital not specified"),
     };
   }) satisfies AppointmentSummary[];
 }
@@ -1360,18 +1377,19 @@ export async function fetchPatientRentalOrders(patientId: string) {
   })) satisfies RentalOrderSummary[];
 }
 
-export async function requestRentalReturn(orderId: string, returnMethod: "pickup" | "self") {
+export async function requestRentalReturn(orderId: string, patientId: string, returnMethod: "pickup" | "self") {
   const supabase = client();
   const { error } = await supabase
     .from("rental_orders")
     .update({ status: "return_requested", return_method: returnMethod, return_requested_at: new Date().toISOString() })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .eq("patient_id", patientId);
 
   if (error) throw new Error(error.message);
 }
 
-export async function cancelRentalOrder(orderId: string) {
+export async function cancelRentalOrder(orderId: string, patientId: string) {
   const supabase = client();
-  const { error } = await supabase.from("rental_orders").update({ status: "cancelled" }).eq("id", orderId);
+  const { error } = await supabase.from("rental_orders").update({ status: "cancelled" }).eq("id", orderId).eq("patient_id", patientId);
   if (error) throw new Error(error.message);
 }

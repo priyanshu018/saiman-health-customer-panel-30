@@ -15,7 +15,9 @@ export type BookingRef =
   | { kind: "lab_booking"; approvalId: string }
   | { kind: "hospital_booking"; approvalId: string }
   | { kind: "ctmri_booking"; approvalId: string }
-  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" };
+  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" }
+  | { kind: "doctor_consultation"; doctorId: string; plan: "single" | "monthly" | "yearly" }
+  | { kind: "pharmacy_order"; items: Array<{ productId: string; quantity: number }> };
 
 export type CreateTransactionPayload = {
   serviceType: TransactionServiceType;

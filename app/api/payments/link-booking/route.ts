@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseAdminClient, getAuthenticatedUser, linkTransactionToEntity } from "@/lib/payment-transactions";
+import { createSupabaseAdminClient, fetchCustomerTransaction, getAuthenticatedUser, linkTransactionToEntity } from "@/lib/payment-transactions";
 
 type LinkBody = {
   transactionId?: string;
@@ -19,8 +19,14 @@ export async function POST(request: Request) {
       return jsonError("Missing transaction link details.", 400);
     }
 
-    await getAuthenticatedUser(request.headers.get("authorization"));
+    const user = await getAuthenticatedUser(request.headers.get("authorization"));
     const client = createSupabaseAdminClient();
+
+    const existing = await fetchCustomerTransaction(client, body.transactionId);
+    if (existing.patient_id !== user.id) {
+      return jsonError("This transaction does not belong to the current customer.", 403);
+    }
+
     const transaction = await linkTransactionToEntity({
       client,
       transactionId: body.transactionId,

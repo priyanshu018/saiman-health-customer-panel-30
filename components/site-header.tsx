@@ -134,17 +134,19 @@ function AccountMenu() {
   const { user, setUser, state, configured } = useCustomerUser();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const ref = useClickOutside(() => setOpen(false));
 
   async function handleLogout() {
     try {
       setLoggingOut(true);
+      setLogoutError("");
       await logoutCustomer();
       setUser(null);
       setOpen(false);
       startTransition(() => router.refresh());
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Unable to log out.");
+      setLogoutError(error instanceof Error ? error.message : "Unable to log out.");
     } finally {
       setLoggingOut(false);
     }
@@ -187,6 +189,7 @@ function AccountMenu() {
           <button type="button" className="app-nav-menu-logout" onClick={handleLogout} disabled={loggingOut}>
             {loggingOut ? "Signing out..." : "Logout"}
           </button>
+          {logoutError ? <span style={{ display: "block", padding: "6px 12px 0", fontSize: "0.78rem", color: "#dc2626" }}>{logoutError}</span> : null}
         </div>
       ) : null}
     </div>

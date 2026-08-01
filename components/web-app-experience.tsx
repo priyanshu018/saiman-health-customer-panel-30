@@ -3,17 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useCustomerUser } from "@/components/customer-live";
 import { SiteHeader } from "@/components/site-header";
-import { recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
+import { subscriptionPlans } from "@/lib/customer-web-data";
 import {
   cancelInstantCallRequest,
   cancelRentalOrder,
   createDoctorAppointment,
   createPharmacyOrder,
   createStaffingBooking,
-  createSupportTicket,
   fetchActiveInstantCallRequest,
   fetchApprovedCtmriServices,
   fetchApprovedDoctors,
@@ -56,7 +55,6 @@ import {
   type RentalOrderSummary,
   type StaffingBookingSummary,
   type StaffingProviderSummary,
-  type SupportTicketSummary,
 } from "@/lib/customer-web-live";
 import {
   addProductToCart,
@@ -74,7 +72,9 @@ import {
 import { beginWebPayment, clearPendingPayment, fulfillServiceBooking, getPendingPayment, linkTransactionToEntity, verifyWebPayment } from "@/lib/web-payments";
 
 function formatMoney(value: number) {
-  return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const amount = Number(value) || 0;
+  const hasFraction = Math.round(amount * 100) % 100 !== 0;
+  return `₹${amount.toLocaleString("en-IN", { minimumFractionDigits: hasFraction ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
 
 function formatExperience(years: number) {
@@ -285,7 +285,7 @@ function DoctorCardSkeleton() {
 
 function DoctorGridSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div style={styles.doctorGrid}>
+    <div className="responsive-grid-2col" style={styles.doctorGrid}>
       {Array.from({ length: count }).map((_, index) => (
         <DoctorCardSkeleton key={index} />
       ))}
@@ -426,20 +426,21 @@ function WebAuthForm({ mode }: { mode: "login" | "signup" }) {
     <form onSubmit={onSubmit} style={styles.authForm}>
       {mode === "signup" ? (
         <>
-          <label style={styles.fieldLabel}>Full name</label>
-          <input style={styles.fieldInput} value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" required />
-          <label style={styles.fieldLabel}>Phone number</label>
-          <input style={styles.fieldInput} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" required />
+          <label style={styles.fieldLabel} htmlFor="auth-name">Full name</label>
+          <input id="auth-name" style={styles.fieldInput} value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" required />
+          <label style={styles.fieldLabel} htmlFor="auth-phone">Phone number</label>
+          <input id="auth-phone" style={styles.fieldInput} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" required />
         </>
       ) : null}
-      <label style={styles.fieldLabel}>Email address</label>
-      <input style={styles.fieldInput} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
-      <label style={styles.fieldLabel}>Password</label>
-      <input style={styles.fieldInput} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required />
+      <label style={styles.fieldLabel} htmlFor="auth-email">Email address</label>
+      <input id="auth-email" style={styles.fieldInput} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
+      <label style={styles.fieldLabel} htmlFor="auth-password">Password</label>
+      <input id="auth-password" style={styles.fieldInput} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required />
       {mode === "signup" ? (
         <>
-          <label style={styles.fieldLabel}>Confirm password</label>
+          <label style={styles.fieldLabel} htmlFor="auth-confirm-password">Confirm password</label>
           <input
+            id="auth-confirm-password"
             style={styles.fieldInput}
             type="password"
             value={confirmPassword}
@@ -448,26 +449,11 @@ function WebAuthForm({ mode }: { mode: "login" | "signup" }) {
             required
           />
         </>
-      ) : (
-        <div style={styles.inlineLinkRow}>
-          <span />
-          <button type="button" style={styles.textButton}>Forgot password?</button>
-        </div>
-      )}
+      ) : null}
       {error ? <div style={styles.errorNote}>{error}</div> : null}
-      <button type="submit" style={styles.primaryAction} disabled={loading}>
+      <button type="submit" className="primary-action-btn" style={styles.primaryAction} disabled={loading}>
         {loading ? "Please wait..." : mode === "login" ? "Sign In as Patient" : "Create Account"}
       </button>
-      <div style={styles.authDivider}>
-        <span style={styles.authDividerLine} />
-        <span>or</span>
-        <span style={styles.authDividerLine} />
-      </div>
-      <div style={styles.authQuickRow}>
-        <button type="button" style={styles.secondaryAction}>Google</button>
-        <button type="button" style={styles.secondaryAction}>Mobile OTP</button>
-      </div>
-      <button type="button" style={styles.linkAction}>Continue email verification</button>
       <Link href={mode === "login" ? "/auth/signup" : "/auth/login"} style={styles.authSwitch}>
         {mode === "login" ? "Need an account? Sign up" : "Already have an account? Login"}
       </Link>
@@ -490,7 +476,7 @@ function AuthPageTemplate({
 }) {
   return (
     <div style={styles.authPage}>
-      <div style={styles.authGrid}>
+      <div className="responsive-grid-standard" style={styles.authGrid}>
         <section style={styles.authVisual}>
           <div style={styles.authBadge}>✚ Saiman Healthcare</div>
           <h1 style={styles.authHeadline}>{title}</h1>
@@ -660,6 +646,7 @@ export function WebHomeScreen() {
               style={styles.fieldInput}
               value={homeQuery}
               onChange={(event) => setHomeQuery(event.target.value)}
+              aria-label="Search doctors, tests, or services"
               placeholder="Try &quot;Cardiologist&quot; or &quot;Blood test&quot;"
             />
           </form>
@@ -732,7 +719,7 @@ export function WebHomeScreen() {
             <p style={styles.teleCopy}>Talk to an online doctor right away for urgent, non-emergency guidance.</p>
             <Link href="/instant-call" style={styles.primaryActionLink}>Start Call</Link>
           </div>
-          <div style={styles.dualPromoGrid}>
+          <div className="responsive-grid-2col" style={styles.dualPromoGrid}>
             <Link href="/subscription-plans" style={styles.subscriptionTile}>
               <span style={styles.subscriptionTag}>Popular</span>
               <strong>Subscription Plan</strong>
@@ -754,21 +741,37 @@ export function WebHomeScreen() {
 export function WebDoctorsScreen() {
   const [doctors, setDoctors] = useState<DoctorSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All");
 
   useEffect(() => {
     fetchApprovedDoctors()
       .then((items) => setDoctors(items))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const specialties = ["All", ...Array.from(new Set(doctors.map((doctor) => doctor.specialty)))];
-  const filtered = doctors.filter((doctor) => {
-    const matchesSpecialty = specialty === "All" || doctor.specialty === specialty;
-    const haystack = `${doctor.name} ${doctor.specialty} ${doctor.hospital} ${doctor.city}`.toLowerCase();
-    return matchesSpecialty && haystack.includes(query.toLowerCase());
-  });
+  const specialties = useMemo(() => {
+    const specialtyMap = new Map<string, string>();
+    doctors.forEach((doctor) => {
+      const key = doctor.specialty.trim().toLowerCase();
+      if (key && !specialtyMap.has(key)) {
+        specialtyMap.set(key, doctor.specialty.trim().replace(/\w\S*/g, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase()));
+      }
+    });
+    return ["All", ...Array.from(specialtyMap.values()).sort()];
+  }, [doctors]);
+
+  const filtered = useMemo(
+    () =>
+      doctors.filter((doctor) => {
+        const matchesSpecialty = specialty === "All" || doctor.specialty.trim().toLowerCase() === specialty.trim().toLowerCase();
+        const haystack = `${doctor.name} ${doctor.specialty} ${doctor.hospital} ${doctor.city}`.toLowerCase();
+        return matchesSpecialty && haystack.includes(query.toLowerCase());
+      }),
+    [doctors, specialty, query],
+  );
 
   return (
     <DashboardFrame title="Doctor Consultation" subtitle="Find verified specialists, compare consultation fees, and book an appointment that fits your schedule.">
@@ -777,9 +780,9 @@ export function WebDoctorsScreen() {
           <span style={styles.bluePill}>Verified Doctors</span>
           <h2 style={styles.heroHeadingAlt}>Consult trusted specialists with clear pricing.</h2>
           <div style={styles.heroMetricRow}>
-            <span style={styles.metricBadge}>120+ doctors</span>
-            <span style={styles.metricBadge}>Same-day slots</span>
-            <span style={styles.metricBadge}>Secure care</span>
+            <span style={styles.metricBadge}>{doctors.length > 0 ? `${doctors.length}+ verified doctors` : "Verified doctors"}</span>
+            <span style={styles.metricBadge}>Flexible scheduling</span>
+            <span style={styles.metricBadge}>Secure payments</span>
           </div>
         </div>
       </section>
@@ -790,6 +793,7 @@ export function WebDoctorsScreen() {
             style={styles.searchInput}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search doctors, specialties, hospital"
             placeholder="Search doctors, specialties, hospital..."
           />
           <div style={styles.chipRow}>
@@ -803,8 +807,9 @@ export function WebDoctorsScreen() {
       </section>
 
       {loading ? <DoctorGridSkeleton /> : null}
+      {!loading && loadError ? <div style={styles.noticeCard}>Unable to load doctors right now. Please refresh the page.</div> : null}
 
-      <div style={styles.doctorGrid}>
+      <div className="responsive-grid-2col" style={styles.doctorGrid}>
         {loading ? null : filtered.map((doctor) => (
           <Link key={doctor.id} href={`/doctors/${doctor.id}`} className="hover-lift" style={styles.doctorCard}>
             <DoctorImage
@@ -824,7 +829,7 @@ export function WebDoctorsScreen() {
                 {formatExperience(doctor.experience)} · {formatDoctorRating(doctor.rating, doctor.reviewCount)}
               </p>
               <div style={styles.doctorFooter}>
-                <strong>{formatMoney(doctor.fee)}</strong>
+                <strong>{doctor.fee > 0 ? formatMoney(doctor.fee) : "Fee on request"}</strong>
                 <span style={styles.availableLabel}>Verified profile</span>
               </div>
             </div>
@@ -845,14 +850,17 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   const { requireAuth } = useAuthActionGuard();
   const [doctor, setDoctor] = useState<DoctorSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"single" | "monthly" | "yearly">("single");
   const [submitting, setSubmitting] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState(todayIsoDate);
   const [appointmentTime, setAppointmentTime] = useState(APPOINTMENT_TIME_SLOTS[0]);
+  const [paymentError, setPaymentError] = useState("");
 
   useEffect(() => {
     fetchApprovedDoctors()
       .then((items) => setDoctor(items.find((item) => item.id === doctorId) || null))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [doctorId]);
 
@@ -863,6 +871,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
 
     const fee = selectedPlan === "monthly" ? doctor.fee * 3 : selectedPlan === "yearly" ? doctor.fee * 10 : doctor.fee;
     setSubmitting(true);
+    setPaymentError("");
 
     try {
       await beginWebPayment({
@@ -887,6 +896,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
           paymentMethod: "upi",
           providerId: doctor.id,
           providerName: doctor.name,
+          bookingRef: { kind: "doctor_consultation", doctorId: doctor.id, plan: selectedPlan },
           customer: {
             name: user.name,
             email: user.email,
@@ -899,7 +909,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
         },
       });
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Unable to start payment.");
+      setPaymentError(error instanceof Error ? error.message : "Unable to start payment.");
       setSubmitting(false);
     }
   }
@@ -907,10 +917,13 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   return (
     <DashboardFrame title="Doctor Profile" subtitle="Review doctor details, choose a consultation plan, and book securely.">
       {loading ? <div style={styles.noticeCard}>Loading doctor profile...</div> : null}
+      {!loading && !doctor ? (
+        <div style={styles.noticeCard}>{loadError ? "Unable to load this doctor right now. Please refresh the page." : "This doctor could not be found."}</div>
+      ) : null}
       {doctor ? (
         <>
-          <section style={styles.detailHeroGrid}>
-            <div style={styles.profileCard}>
+          <section className="responsive-grid-detail" style={styles.detailHeroGrid}>
+            <div className="responsive-profile-card" style={styles.profileCard}>
               <DoctorImage doctor={doctor} style={styles.profileImage} textStyle={styles.profileImageFallback} />
               <div style={styles.profileInfo}>
                 <div style={styles.doctorTopline}>
@@ -926,8 +939,8 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
                 </div>
               </div>
               <div style={styles.priceAside}>
-                <strong>{formatMoney(doctor.fee)}</strong>
-                <span>Starts from</span>
+                <strong>{doctor.fee > 0 ? formatMoney(doctor.fee) : "On request"}</strong>
+                <span>{doctor.fee > 0 ? "Starts from" : "Contact support"}</span>
               </div>
             </div>
             <div style={styles.aboutCard}>
@@ -935,14 +948,14 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
               <p style={styles.blogDetail}>
                 {doctor.name} is a verified practitioner on Saiman Healthcare, available for appointments through our doctor network.
               </p>
-              <div style={styles.infoStatGrid}>
+              <div className="responsive-grid-2col" style={styles.infoStatGrid}>
                 <div style={styles.infoStatCard}>
-                  <strong>Next Available</strong>
-                  <span>Today · Evening 05:00 AM - 06:00 AM</span>
+                  <strong>Consultation Mode</strong>
+                  <span>{doctor.availability.join(", ")}</span>
                 </div>
                 <div style={styles.infoStatCard}>
-                  <strong>Languages</strong>
-                  <span>English, Hindi</span>
+                  <strong>Hospital</strong>
+                  <span>{doctor.hospital}</span>
                 </div>
               </div>
             </div>
@@ -963,7 +976,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
                   onClick={() => setSelectedPlan(plan.id as "single" | "monthly" | "yearly")}
                   style={{ ...styles.planChoice, ...(selectedPlan === plan.id ? styles.planChoiceActive : {}) }}
                 >
-                  <div>
+                  <div style={{ display: "grid", gap: 2, textAlign: "left" }}>
                     <strong>{plan.label}</strong>
                     <span>{plan.sub}</span>
                   </div>
@@ -997,6 +1010,8 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
             </div>
           </section>
 
+          {paymentError ? <div style={styles.errorNote}>{paymentError}</div> : null}
+
           <section style={styles.checkoutBar}>
             <div>
               <strong style={styles.checkoutTitle}>
@@ -1004,7 +1019,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
               </strong>
               <span style={styles.checkoutMeta}>{formatDateTimeLabel(appointmentDate, appointmentTime)}</span>
             </div>
-            <button onClick={handleContinue} style={styles.primaryAction} disabled={submitting}>
+            <button onClick={handleContinue} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
               {submitting
                 ? "Starting..."
                 : `Continue · ${formatMoney(
@@ -1159,7 +1174,7 @@ export function WebInstantCallScreen() {
           {activeRequest.doctorName ? <p style={styles.heroCopy}>Doctor: {activeRequest.doctorName}</p> : null}
           <div style={styles.heroActionRow}>
             {canJoin ? (
-              <button onClick={handleJoin} style={styles.primaryAction} disabled={joining || activeRequest.status === "connecting"}>
+              <button onClick={handleJoin} className="primary-action-btn" style={styles.primaryAction} disabled={joining || activeRequest.status === "connecting"}>
                 {activeRequest.status === "connecting" ? "Connecting..." : joining ? "Joining..." : "Join Call"}
               </button>
             ) : null}
@@ -1173,12 +1188,12 @@ export function WebInstantCallScreen() {
       ) : null}
 
       {!loading && !activeRequest ? (
-        <div style={styles.twoColumnGrid}>
+        <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
           <section style={styles.sectionBlock}>
             <div style={styles.sectionHead}>
               <h2 style={styles.sectionTitle}>Choose a specialty</h2>
             </div>
-            <div style={styles.specialtyGrid}>
+            <div className="responsive-grid-3col" style={styles.specialtyGrid}>
               {INSTANT_CALL_SPECIALTIES.map((item) => (
                 <button
                   key={item}
@@ -1198,7 +1213,7 @@ export function WebInstantCallScreen() {
             <input style={styles.fieldInput} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Describe why you need to speak with a doctor" />
             <label style={styles.fieldLabel}>Symptoms or notes (optional)</label>
             <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Any symptoms or context that will help the doctor" />
-            <button onClick={submit} style={{ ...styles.primaryAction, marginTop: 18 }} disabled={submitting}>
+            <button onClick={submit} className="primary-action-btn" style={{ ...styles.primaryAction, marginTop: 18 }} disabled={submitting}>
               {submitting ? "Requesting..." : "Request Instant Call"}
             </button>
           </section>
@@ -1238,12 +1253,16 @@ export function WebAppointmentsScreen() {
     fetchPatientAppointments(user.id).then(setLiveAppointments).catch(() => setLiveAppointments([]));
   }, [user]);
 
-  const merged = liveAppointments.map((item) => ({
-    ...item,
-    status: ["completed", "cancelled"].includes(item.status.toLowerCase()) ? item.status.toLowerCase() : "upcoming",
-  }));
+  const merged = useMemo(
+    () =>
+      liveAppointments.map((item) => ({
+        ...item,
+        status: ["completed", "cancelled"].includes(item.status.toLowerCase()) ? item.status.toLowerCase() : "upcoming",
+      })),
+    [liveAppointments],
+  );
 
-  const filtered = merged.filter((item) => item.status === tab);
+  const filtered = useMemo(() => merged.filter((item) => item.status === tab), [merged, tab]);
 
   return (
     <DashboardFrame title="My Appointments" subtitle="Manage upcoming consultations, track status, and review your visit history.">
@@ -1264,7 +1283,7 @@ export function WebAppointmentsScreen() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No {tab[0].toUpperCase() + tab.slice(1)} Appointments</h2>
           <p style={styles.emptyCopy}>Book a consultation with a top doctor from the doctors page.</p>
-          <Link href="/doctors" style={styles.primaryActionLink}>Find a Doctor</Link>
+          <Link href="/doctors" style={styles.emptyPanelAction}>Find a Doctor</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -1307,7 +1326,7 @@ export function WebProfileScreen() {
         <section style={styles.sectionBlock}>
           {[
             ["Appointments", "View and manage bookings", "/appointments"],
-            ["Video Consults", "Start or join a call", "/instant-call"],
+            ["Instant Doctor Call", "Request an urgent consultation", "/instant-call"],
             ["Prescriptions", "View doctor prescriptions", "/records"],
             ["Help & Support", "FAQs and customer care", "/support"],
           ].map(([title, copy, href]) => (
@@ -1374,12 +1393,12 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
       <div style={styles.stockText}>Ready to add to cart</div>
       {line ? (
         <div style={styles.quantityBox}>
-          <button style={styles.quantityButton} onClick={() => decrementProduct(product.id)}>−</button>
+          <button style={styles.quantityButton} onClick={() => decrementProduct(product.id)} aria-label={`Remove one ${product.name}`}>−</button>
           <span>{line.quantity}</span>
-          <button style={styles.quantityButton} onClick={handleAdd}>+</button>
+          <button style={styles.quantityButton} onClick={handleAdd} aria-label={`Add one more ${product.name}`}>+</button>
         </div>
       ) : (
-        <button style={styles.primaryAction} onClick={handleAdd}>Add to Cart</button>
+        <button className="primary-action-btn" style={styles.primaryAction} onClick={handleAdd}>Add to Cart</button>
       )}
     </div>
   );
@@ -1388,6 +1407,7 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
 export function WebPharmacyScreen() {
   const [products, setProducts] = useState<DemoPharmacyProduct[]>(DEMO_PHARMACY_PRODUCTS);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
   const cart = useCart();
 
   useEffect(() => {
@@ -1417,7 +1437,15 @@ export function WebPharmacyScreen() {
     };
   }, []);
 
-  const categories = Array.from(new Set(products.map((item) => item.category)));
+  const categories = useMemo(() => Array.from(new Set(products.map((item) => item.category))), [products]);
+  const filteredProducts = useMemo(
+    () =>
+      products.filter((item) => {
+        const haystack = `${item.name} ${item.subtitle} ${item.category}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [products, query],
+  );
 
   return (
     <DashboardFrame
@@ -1425,34 +1453,44 @@ export function WebPharmacyScreen() {
       subtitle="Browse medicine categories, compare prices, and check out securely for doorstep delivery."
       accent={cart.itemCount ? <Link href="/pharmacy/cart" style={styles.headerPill}>Proceed to Checkout · {cart.itemCount}</Link> : undefined}
     >
-      <section style={styles.pharmacyHero}>
-        <div style={styles.deliveryBar}>
-          <strong>Delivering to</strong>
-          <span>D178, Industrial Area</span>
-        </div>
-        <div style={styles.pharmacySearch}>Search medicines, healthcare items, and categories</div>
+      <section style={styles.heroWideCard}>
+        <span style={styles.bluePill}>Doorstep Delivery</span>
+        <h2 style={styles.heroHeadingAlt}>Order medicines from verified pharmacies</h2>
+        <p style={styles.heroCopy}>Compare prices across approved pharmacies and check out securely — you&apos;ll add your delivery address at checkout.</p>
       </section>
 
-      <section style={styles.heroWideCard}>
-        <span style={styles.bluePill}>Pharmacy Banner</span>
-        <h2 style={styles.heroHeadingAlt}>Order medicines from verified pharmacies</h2>
-        <p style={styles.heroCopy}>Order medicines from verified pharmacies with secure checkout and doorstep delivery.</p>
+      <section style={styles.sectionBlock}>
+        <input
+          style={styles.searchInput}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search medicines, healthcare items, and categories"
+          placeholder="Search medicines, healthcare items, and categories"
+        />
       </section>
 
       {loading ? <ProductGridSkeleton /> : null}
 
-      {loading ? null : categories.map((category) => (
+      {!loading && query && !filteredProducts.length ? (
+        <div style={styles.noticeCard}>No medicines match &quot;{query}&quot;. Try a different search term.</div>
+      ) : null}
+
+      {loading ? null : categories.map((category) => {
+        const items = filteredProducts.filter((item) => item.category === category);
+        if (!items.length) return null;
+        return (
         <section key={category} style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
             <h2 style={styles.sectionTitle}>{category}</h2>
           </div>
           <div style={styles.productGrid}>
-            {products.filter((item) => item.category === category).map((product) => (
+            {items.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
         </section>
-      ))}
+        );
+      })}
     </DashboardFrame>
   );
 }
@@ -1460,18 +1498,24 @@ export function WebPharmacyScreen() {
 export function WebLabTestsScreen() {
   const [tests, setTests] = useState<LabTestSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     fetchApprovedLabTests()
       .then(setTests)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = tests.filter((test) => {
-    const haystack = `${test.name} ${test.category} ${test.labName} ${test.city}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      tests.filter((test) => {
+        const haystack = `${test.name} ${test.category} ${test.labName} ${test.city}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [tests, query],
+  );
 
   return (
     <DashboardFrame title="Lab Tests" subtitle="Search diagnostic tests, compare lab prices, and choose home collection or a center visit.">
@@ -1486,12 +1530,15 @@ export function WebLabTestsScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search tests, categories, or lab names"
           placeholder="Search tests, categories, or lab names..."
         />
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved lab tests available yet.</div> : null}
+      {!loading && !filtered.length ? (
+        <div style={styles.noticeCard}>{loadError ? "Unable to load lab tests right now. Please refresh the page." : "No approved lab tests available yet."}</div>
+      ) : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((test) => (
@@ -1536,6 +1583,7 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     fetchApprovedLabTests()
@@ -1544,6 +1592,7 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
         setTest(found);
         if (found) setCity(found.city !== "Location not specified" ? found.city : "");
       })
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [testId]);
 
@@ -1602,9 +1651,11 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
     return (
       <DashboardFrame title="Lab Test" subtitle="This test is no longer available.">
         <section style={styles.emptyPanel}>
-          <h2 style={styles.emptyTitle}>Test not found</h2>
-          <p style={styles.emptyCopy}>This lab test may have been removed or is no longer approved.</p>
-          <Link href="/lab-tests" style={styles.primaryActionLink}>Browse Lab Tests</Link>
+          <h2 style={styles.emptyTitle}>{loadError ? "Unable to load this test" : "Test not found"}</h2>
+          <p style={styles.emptyCopy}>
+            {loadError ? "Something went wrong loading this lab test. Please refresh the page." : "This lab test may have been removed or is no longer approved."}
+          </p>
+          <Link href="/lab-tests" style={styles.emptyPanelAction}>Browse Lab Tests</Link>
         </section>
       </DashboardFrame>
     );
@@ -1618,7 +1669,7 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Test Details</h2>
         </div>
-        <div style={styles.infoStatGrid}>
+        <div className="responsive-grid-2col" style={styles.infoStatGrid}>
           <div style={styles.infoStatCard}>
             <strong>Category</strong>
             <span>{test.category}</span>
@@ -1672,7 +1723,7 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
           <strong style={styles.checkoutTitle}>{test.name}</strong>
           <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
         </div>
-        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
           {submitting ? "Starting..." : `Pay ${formatMoney(test.price)}`}
         </button>
       </section>
@@ -1681,18 +1732,19 @@ export function WebLabTestDetailScreen({ testId }: { testId: string }) {
 }
 
 function LabBookingsInner() {
-  const { user } = useCustomerUser();
+  const { user, state: authState } = useCustomerUser();
   const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<LabBookingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
 
   useEffect(() => {
     if (!user) return;
     fetchPatientLabBookings(user.id)
       .then(setBookings)
       .catch(() => setBookings([]))
-      .finally(() => setLoading(false));
-  }, [user]);
+      .finally(() => setDataLoading(false));
+  }, [user, authState.loading]);
 
   return (
     <DashboardFrame title="Lab Test Bookings" subtitle="Track your diagnostic test bookings from confirmation to report.">
@@ -1704,7 +1756,7 @@ function LabBookingsInner() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No lab test bookings yet</h2>
           <p style={styles.emptyCopy}>Book a diagnostic test with a verified lab near you.</p>
-          <Link href="/lab-tests" style={styles.primaryActionLink}>Browse Lab Tests</Link>
+          <Link href="/lab-tests" style={styles.emptyPanelAction}>Browse Lab Tests</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -1737,18 +1789,24 @@ export function WebLabBookingsScreen() {
 export function WebHospitalsScreen() {
   const [services, setServices] = useState<HospitalServiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     fetchApprovedHospitalServices()
       .then(setServices)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = services.filter((service) => {
-    const haystack = `${service.providerName} ${service.providerCity} ${service.providerAddress} ${service.serviceName} ${service.category}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      services.filter((service) => {
+        const haystack = `${service.providerName} ${service.providerCity} ${service.providerAddress} ${service.serviceName} ${service.category}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [services, query],
+  );
 
   return (
     <DashboardFrame title="Hospitals & Surgeries" subtitle="Browse verified hospitals and surgery centers, compare specialties, and request a consultation.">
@@ -1763,12 +1821,15 @@ export function WebHospitalsScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search hospitals, surgery services, city, address"
           placeholder="Search hospitals, surgery services, city, address..."
         />
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved hospital services available yet.</div> : null}
+      {!loading && !filtered.length ? (
+        <div style={styles.noticeCard}>{loadError ? "Unable to load hospitals right now. Please refresh the page." : "No approved hospital services available yet."}</div>
+      ) : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((service) => (
@@ -1817,10 +1878,12 @@ export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     fetchApprovedHospitalServices()
       .then((items) => setService(items.find((item) => item.id === serviceId) || null))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [serviceId]);
 
@@ -1873,10 +1936,12 @@ export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
     return (
       <DashboardFrame title="Hospital Service" subtitle="This service is no longer available.">
         <section style={styles.emptyPanel}>
-          <h2 style={styles.emptyTitle}>Service not found</h2>
-          <p style={styles.emptyCopy}>This hospital service may have been removed or is no longer approved in your area.</p>
+          <h2 style={styles.emptyTitle}>{loadError ? "Unable to load this service" : "Service not found"}</h2>
+          <p style={styles.emptyCopy}>
+            {loadError ? "Something went wrong loading this hospital service. Please refresh the page." : "This hospital service may have been removed or is no longer approved in your area."}
+          </p>
           <div style={{ display: "flex", gap: 10 }}>
-            <Link href="/hospitals" style={styles.primaryActionLink}>Browse Hospitals</Link>
+            <Link href="/hospitals" style={styles.emptyPanelAction}>Browse Hospitals</Link>
             <Link href="/support" style={styles.secondaryActionLink}>Contact Support</Link>
           </div>
         </section>
@@ -1893,7 +1958,7 @@ export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
           <h2 style={styles.sectionTitle}>Hospital Details</h2>
         </div>
         <p style={styles.tileCopy}>{service.description || "Verified hospital partner."}</p>
-        <div style={styles.infoStatGrid}>
+        <div className="responsive-grid-2col" style={styles.infoStatGrid}>
           <div style={styles.infoStatCard}>
             <strong>Specialty</strong>
             <span>{service.category}</span>
@@ -1935,7 +2000,7 @@ export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
           <strong style={styles.checkoutTitle}>{service.serviceName}</strong>
           <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
         </div>
-        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
           {submitting ? "Starting..." : `Pay ${formatMoney(service.price)}`}
         </button>
       </section>
@@ -1944,18 +2009,19 @@ export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
 }
 
 function HospitalRequestsInner() {
-  const { user } = useCustomerUser();
+  const { user, state: authState } = useCustomerUser();
   const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<ProviderServiceBookingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
 
   useEffect(() => {
     if (!user) return;
     fetchPatientProviderServiceBookings("hospital", user.id)
       .then(setBookings)
       .catch(() => setBookings([]))
-      .finally(() => setLoading(false));
-  }, [user]);
+      .finally(() => setDataLoading(false));
+  }, [user, authState.loading]);
 
   return (
     <DashboardFrame title="Hospital Requests" subtitle="Track your hospital consultation requests and their status.">
@@ -1967,7 +2033,7 @@ function HospitalRequestsInner() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No hospital requests yet</h2>
           <p style={styles.emptyCopy}>Request a consultation with a verified hospital or surgery center.</p>
-          <Link href="/hospitals" style={styles.primaryActionLink}>Browse Hospitals</Link>
+          <Link href="/hospitals" style={styles.emptyPanelAction}>Browse Hospitals</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -1998,18 +2064,24 @@ export function WebHospitalRequestsScreen() {
 export function WebCtmriScreen() {
   const [services, setServices] = useState<CtmriServiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     fetchApprovedCtmriServices()
       .then(setServices)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = services.filter((service) => {
-    const haystack = `${service.providerName} ${service.providerCity} ${service.serviceName} ${service.category}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      services.filter((service) => {
+        const haystack = `${service.providerName} ${service.providerCity} ${service.serviceName} ${service.category}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [services, query],
+  );
 
   return (
     <DashboardFrame title="CT / MRI" subtitle="Compare scan prices, locations, and available diagnostic centers.">
@@ -2024,12 +2096,15 @@ export function WebCtmriScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search CT, MRI, center, city"
           placeholder="Search CT, MRI, center, city..."
         />
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved CT / MRI services available yet.</div> : null}
+      {!loading && !filtered.length ? (
+        <div style={styles.noticeCard}>{loadError ? "Unable to load imaging services right now. Please refresh the page." : "No approved CT / MRI services available yet."}</div>
+      ) : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((service) => (
@@ -2074,10 +2149,12 @@ export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     fetchApprovedCtmriServices()
       .then((items) => setService(items.find((item) => item.id === serviceId) || null))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [serviceId]);
 
@@ -2130,10 +2207,12 @@ export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
     return (
       <DashboardFrame title="Imaging Scan" subtitle="This service is no longer available.">
         <section style={styles.emptyPanel}>
-          <h2 style={styles.emptyTitle}>Service not found</h2>
-          <p style={styles.emptyCopy}>This imaging service may have been removed or is no longer approved in your area.</p>
+          <h2 style={styles.emptyTitle}>{loadError ? "Unable to load this service" : "Service not found"}</h2>
+          <p style={styles.emptyCopy}>
+            {loadError ? "Something went wrong loading this imaging service. Please refresh the page." : "This imaging service may have been removed or is no longer approved in your area."}
+          </p>
           <div style={{ display: "flex", gap: 10 }}>
-            <Link href="/ct-mri" style={styles.primaryActionLink}>Browse Imaging Centers</Link>
+            <Link href="/ct-mri" style={styles.emptyPanelAction}>Browse Imaging Centers</Link>
             <Link href="/support" style={styles.secondaryActionLink}>Contact Support</Link>
           </div>
         </section>
@@ -2150,7 +2229,7 @@ export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
           <h2 style={styles.sectionTitle}>Center Details</h2>
         </div>
         <p style={styles.tileCopy}>{service.description || "Verified diagnostic imaging center."}</p>
-        <div style={styles.infoStatGrid}>
+        <div className="responsive-grid-2col" style={styles.infoStatGrid}>
           <div style={styles.infoStatCard}>
             <strong>Category</strong>
             <span>{service.category}</span>
@@ -2185,7 +2264,7 @@ export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
           <strong style={styles.checkoutTitle}>{service.serviceName}</strong>
           <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
         </div>
-        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
           {submitting ? "Starting..." : `Pay ${formatMoney(service.price)}`}
         </button>
       </section>
@@ -2194,18 +2273,19 @@ export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
 }
 
 function CtmriBookingsInner() {
-  const { user } = useCustomerUser();
+  const { user, state: authState } = useCustomerUser();
   const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<ProviderServiceBookingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
 
   useEffect(() => {
     if (!user) return;
     fetchPatientProviderServiceBookings("ctmri", user.id)
       .then(setBookings)
       .catch(() => setBookings([]))
-      .finally(() => setLoading(false));
-  }, [user]);
+      .finally(() => setDataLoading(false));
+  }, [user, authState.loading]);
 
   return (
     <DashboardFrame title="CT / MRI Bookings" subtitle="Track your imaging appointments from request to completion.">
@@ -2217,7 +2297,7 @@ function CtmriBookingsInner() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No imaging bookings yet</h2>
           <p style={styles.emptyCopy}>Book a CT or MRI scan with a verified diagnostic center.</p>
-          <Link href="/ct-mri" style={styles.primaryActionLink}>Browse Imaging Centers</Link>
+          <Link href="/ct-mri" style={styles.emptyPanelAction}>Browse Imaging Centers</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -2248,18 +2328,24 @@ export function WebCtmriBookingsScreen() {
 export function WebRentalEquipmentScreen() {
   const [items, setItems] = useState<RentalEquipmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     fetchApprovedRentalEquipment()
       .then(setItems)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = items.filter((item) => {
-    const haystack = `${item.name} ${item.category} ${item.providerName} ${item.city} ${item.brand} ${item.model}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      items.filter((item) => {
+        const haystack = `${item.name} ${item.category} ${item.providerName} ${item.city} ${item.brand} ${item.model}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [items, query],
+  );
 
   return (
     <DashboardFrame title="Rental Equipment" subtitle="Browse patient-care equipment, compare rental pricing, and choose the right support for home recovery.">
@@ -2274,12 +2360,15 @@ export function WebRentalEquipmentScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search equipment, category, city"
           placeholder="Search equipment, category, city..."
         />
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved rental equipment available yet.</div> : null}
+      {!loading && !filtered.length ? (
+        <div style={styles.noticeCard}>{loadError ? "Unable to load rental equipment right now. Please refresh the page." : "No approved rental equipment available yet."}</div>
+      ) : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((item) => (
@@ -2331,10 +2420,12 @@ export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: s
   const [deliveryDate, setDeliveryDate] = useState(todayIsoDate);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     fetchApprovedRentalEquipment()
       .then((items) => setItem(items.find((entry) => entry.id === equipmentId) || null))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [equipmentId]);
 
@@ -2402,9 +2493,11 @@ export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: s
     return (
       <DashboardFrame title="Rental Equipment" subtitle="This item is no longer available.">
         <section style={styles.emptyPanel}>
-          <h2 style={styles.emptyTitle}>Equipment not found</h2>
-          <p style={styles.emptyCopy}>This listing may have been removed or is no longer approved.</p>
-          <Link href="/rental-equipment" style={styles.primaryActionLink}>Browse Rental Equipment</Link>
+          <h2 style={styles.emptyTitle}>{loadError ? "Unable to load this item" : "Equipment not found"}</h2>
+          <p style={styles.emptyCopy}>
+            {loadError ? "Something went wrong loading this equipment listing. Please refresh the page." : "This listing may have been removed or is no longer approved."}
+          </p>
+          <Link href="/rental-equipment" style={styles.emptyPanelAction}>Browse Rental Equipment</Link>
         </section>
       </DashboardFrame>
     );
@@ -2419,7 +2512,7 @@ export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: s
           <h2 style={styles.sectionTitle}>Equipment Details</h2>
         </div>
         <p style={styles.tileCopy}>{item.description || "Verified patient-care equipment."}</p>
-        <div style={styles.infoStatGrid}>
+        <div className="responsive-grid-2col" style={styles.infoStatGrid}>
           <div style={styles.infoStatCard}>
             <strong>Brand / Model</strong>
             <span>{item.brand || "—"} {item.model}</span>
@@ -2463,7 +2556,7 @@ export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: s
           <strong style={styles.checkoutTitle}>{item.name}</strong>
           <span style={styles.checkoutMeta}>{RENTAL_PLAN_OPTIONS.find((o) => o.id === plan)?.label} rental</span>
         </div>
-        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
           {submitting ? "Starting..." : `Pay ${formatMoney(total)}`}
         </button>
       </section>
@@ -2472,41 +2565,47 @@ export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: s
 }
 
 function RentalOrdersInner() {
-  const { user } = useCustomerUser();
+  const { user, state: authState } = useCustomerUser();
   const searchParams = useSearchParams();
   const [orders, setOrders] = useState<RentalOrderSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
 
   function load() {
     if (!user) return;
     fetchPatientRentalOrders(user.id)
       .then(setOrders)
       .catch(() => setOrders([]))
-      .finally(() => setLoading(false));
+      .finally(() => setDataLoading(false));
   }
 
-  useEffect(load, [user]);
+  useEffect(load, [user, authState.loading]);
 
   async function handleReturn(orderId: string) {
+    if (!user) return;
     setBusyId(orderId);
+    setActionError("");
     try {
-      await requestRentalReturn(orderId, "pickup");
+      await requestRentalReturn(orderId, user.id, "pickup");
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Unable to request a return.");
+      setActionError(err instanceof Error ? err.message : "Unable to request a return.");
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleCancel(orderId: string) {
+    if (!user) return;
     setBusyId(orderId);
+    setActionError("");
     try {
-      await cancelRentalOrder(orderId);
+      await cancelRentalOrder(orderId, user.id);
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Unable to cancel this order.");
+      setActionError(err instanceof Error ? err.message : "Unable to cancel this order.");
     } finally {
       setBusyId(null);
     }
@@ -2515,6 +2614,7 @@ function RentalOrdersInner() {
   return (
     <DashboardFrame title="Rental Orders" subtitle="Track your equipment rentals from delivery to return.">
       {searchParams.get("created") === "1" ? <div style={styles.noticeCard}>Your rental order is confirmed. Track delivery status below.</div> : null}
+      {actionError ? <div style={styles.errorNote}>{actionError}</div> : null}
 
       {loading ? <div style={styles.noticeCard}>Loading your orders...</div> : null}
 
@@ -2522,7 +2622,7 @@ function RentalOrdersInner() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No rental orders yet</h2>
           <p style={styles.emptyCopy}>Rent wheelchairs, beds, and other patient-care equipment for home recovery.</p>
-          <Link href="/rental-equipment" style={styles.primaryActionLink}>Browse Rental Equipment</Link>
+          <Link href="/rental-equipment" style={styles.emptyPanelAction}>Browse Rental Equipment</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -2588,19 +2688,19 @@ export function WebHealthCardScreen() {
         <p style={styles.heroCopy}>A Saiman Health Card gives your family faster access to partner hospitals and simplified billing.</p>
       </section>
 
-      <div style={styles.twoColumnGrid}>
+      <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
         <section style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
             <h2 style={styles.sectionTitle}>Available Plans</h2>
           </div>
-          <div style={styles.planCardGrid}>
+          <div className="responsive-grid-3col" style={styles.planCardGrid}>
             {subscriptionPlans.map((plan) => (
               <div key={plan.name} style={styles.membershipCard}>
                 <span style={styles.subscriptionTag}>Health Card Plan</span>
                 <h3 style={styles.tileTitle}>{plan.name}</h3>
                 <div style={styles.membershipPrice}>{plan.price}</div>
                 <p style={styles.tileCopy}>{plan.detail}</p>
-                <button type="button" onClick={handlePlanView} style={styles.primaryAction}>View Plan</button>
+                <button type="button" onClick={handlePlanView} className="primary-action-btn" style={styles.primaryAction}>View Plan</button>
               </div>
             ))}
           </div>
@@ -2631,18 +2731,24 @@ export function WebHealthCardScreen() {
 export function WebCareStaffScreen() {
   const [staff, setStaff] = useState<StaffingProviderSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     fetchApprovedStaffingProviders()
       .then(setStaff)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = staff.filter((item) => {
-    const haystack = `${item.name} ${item.profession} ${item.city} ${item.qualifications}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      staff.filter((item) => {
+        const haystack = `${item.name} ${item.profession} ${item.city} ${item.qualifications}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      }),
+    [staff, query],
+  );
 
   return (
     <DashboardFrame title="Home Care & Staffing" subtitle="Trained nurses, caregivers, and support professionals for recovery, elder care, and post-surgery support at home.">
@@ -2661,12 +2767,19 @@ export function WebCareStaffScreen() {
           style={styles.searchInput}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search nurse, caregiver, attendant, city"
           placeholder="Search nurse, caregiver, attendant, city..."
         />
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved care staff providers available yet in your area. You can still submit a request and our team will help.</div> : null}
+      {!loading && !filtered.length ? (
+        <div style={styles.noticeCard}>
+          {loadError
+            ? "Unable to load care staff providers right now. Please refresh the page."
+            : "No approved care staff providers available yet in your area. You can still submit a request and our team will help."}
+        </div>
+      ) : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((item) => (
@@ -2782,19 +2895,26 @@ export function WebStaffingRequestScreen() {
             const count = selectedStaff[type] || 0;
             const active = count > 0;
             return (
-              <button
+              <div
                 key={type}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => updateCount(type, active ? -count : 1)}
-                style={{ ...styles.filterChip, ...(active ? styles.filterChipActive : {}), display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 12px" }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    updateCount(type, active ? -count : 1);
+                  }
+                }}
+                style={{ ...styles.filterChip, ...(active ? styles.filterChipActive : {}), display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 12px", cursor: "pointer" }}
               >
                 <span style={{ fontSize: 28 }}>{STAFF_TYPE_ICON[type] || "🩺"}</span>
                 <span>{type}</span>
                 {active ? (
                   <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
+                      aria-label={`Remove one ${type}`}
                       onClick={(event) => {
                         event.stopPropagation();
                         updateCount(type, -1);
@@ -2802,11 +2922,11 @@ export function WebStaffingRequestScreen() {
                       style={styles.quantityButton}
                     >
                       −
-                    </span>
+                    </button>
                     <strong>{count}</strong>
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
+                      aria-label={`Add one more ${type}`}
                       onClick={(event) => {
                         event.stopPropagation();
                         updateCount(type, 1);
@@ -2814,10 +2934,10 @@ export function WebStaffingRequestScreen() {
                       style={styles.quantityButton}
                     >
                       +
-                    </span>
+                    </button>
                   </span>
                 ) : null}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -2880,7 +3000,7 @@ export function WebStaffingRequestScreen() {
           <strong style={styles.checkoutTitle}>{staffSummary || "Select care staff to continue"}</strong>
           <span style={styles.checkoutMeta}>Pricing is confirmed by our dispatch team after review</span>
         </div>
-        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
           {submitting ? "Submitting..." : "Submit Request"}
         </button>
       </section>
@@ -2898,9 +3018,10 @@ function staffingStatusTone(status: string): "upcoming" | "completed" | "cancell
 function StaffingBookingsInner() {
   const searchParams = useSearchParams();
   const justRequested = searchParams.get("requested") === "1";
-  const { user } = useCustomerUser();
+  const { user, state: authState } = useCustomerUser();
   const [bookings, setBookings] = useState<StaffingBookingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
 
   useEffect(() => {
     if (!user) return;
@@ -2915,7 +3036,7 @@ function StaffingBookingsInner() {
           if (active) setBookings([]);
         })
         .finally(() => {
-          if (active) setLoading(false);
+          if (active) setDataLoading(false);
         });
     }
 
@@ -2925,7 +3046,7 @@ function StaffingBookingsInner() {
       active = false;
       unsubscribe();
     };
-  }, [user]);
+  }, [user, authState.loading]);
 
   return (
     <DashboardFrame title="Care Staff Requests" subtitle="Track the status of your home-care and staffing requests, from submission to assignment.">
@@ -2941,7 +3062,7 @@ function StaffingBookingsInner() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No care staff requests yet</h2>
           <p style={styles.emptyCopy}>Request a nurse, caregiver, or home-care professional whenever your patient needs support.</p>
-          <Link href="/care-staff/request" style={styles.primaryActionLink}>Request Care Staff</Link>
+          <Link href="/care-staff/request" style={styles.emptyPanelAction}>Request Care Staff</Link>
         </section>
       ) : (
         <div style={styles.appointmentGrid}>
@@ -2976,7 +3097,7 @@ export function WebStaffingBookingsScreen() {
 export function WebAmbulanceScreen() {
   return (
     <DashboardFrame title="Ambulance" subtitle="Request emergency transport and get connected with a nearby ambulance quickly.">
-      <div style={styles.twoColumnGrid}>
+      <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
         <section style={styles.heroPanel}>
           <div style={styles.heroTag}>24×7 Emergency</div>
           <h2 style={styles.heroHeading}>Emergency transport with quicker action steps.</h2>
@@ -3010,17 +3131,47 @@ export function WebAmbulanceScreen() {
 }
 
 export function WebRecordsScreen() {
+  const { user, state: authState } = useCustomerUser();
+  const [completedConsultations, setCompletedConsultations] = useState(0);
+  const [labBookings, setLabBookings] = useState(0);
+  const [dataLoading, setDataLoading] = useState(true);
+  const loading = authState.loading || (Boolean(user) && dataLoading);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([fetchPatientAppointments(user.id), fetchPatientLabBookings(user.id)])
+      .then(([appointments, labs]) => {
+        setCompletedConsultations(appointments.filter((item) => item.status.toLowerCase() === "completed").length);
+        setLabBookings(labs.length);
+      })
+      .catch(() => {
+        setCompletedConsultations(0);
+        setLabBookings(0);
+      })
+      .finally(() => setDataLoading(false));
+  }, [user, authState.loading]);
+
+  const recordsSummary = [
+    { label: "Completed consultations", value: String(completedConsultations) },
+    { label: "Lab bookings", value: String(labBookings) },
+    { label: "Prescriptions", value: "Coming soon" },
+    { label: "Insurance docs", value: "Coming soon" },
+  ];
+
   return (
     <DashboardFrame title="Records" subtitle="Keep prescriptions, reports, consultation summaries, and health paperwork together in a single web record locker.">
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Digital Health Locker</h2>
         </div>
-        <div style={styles.metricsGrid}>
+        {!user ? (
+          <div style={styles.noticeCard}>Log in to see your real consultation and lab booking counts here.</div>
+        ) : null}
+        <div className="responsive-grid-metrics" style={styles.metricsGrid}>
           {recordsSummary.map((item) => (
             <div key={item.label} style={styles.metricCard}>
               <span style={styles.metricLabel}>{item.label}</span>
-              <strong style={styles.metricValue}>{item.value}</strong>
+              <strong style={styles.metricValue}>{loading && user ? "…" : item.value}</strong>
             </div>
           ))}
         </div>
@@ -3028,16 +3179,23 @@ export function WebRecordsScreen() {
 
       <div style={styles.serviceTileGrid}>
         {[
-          ["Prescriptions", "View doctor prescriptions and medication instructions in one place."],
-          ["Lab Reports", "Store report delivery history and downloadable diagnostic records."],
-          ["Consultation Notes", "Review doctor summaries, visit context, and future plan details."],
-          ["Insurance Docs", "Keep health cards and supporting paperwork easy to access."],
-        ].map(([title, copy]) => (
-          <div key={title} className="hover-lift" style={styles.infoTileCard}>
-            <h3 style={styles.tileTitle}>{title}</h3>
-            <p style={styles.tileCopy}>{copy}</p>
-          </div>
-        ))}
+          ["Prescriptions", "Coming soon — doctor prescriptions and medication instructions in one place.", null],
+          ["Lab Reports", "Coming soon — downloadable diagnostic report access.", null],
+          ["Consultation Notes", "Review your appointment history from the Appointments page today.", "/appointments"],
+          ["Insurance Docs", "Coming soon — keep health cards and supporting paperwork easy to access.", null],
+        ].map(([title, copy, href]) =>
+          href ? (
+            <Link key={title} href={href} className="hover-lift" style={styles.infoTileCard}>
+              <h3 style={styles.tileTitle}>{title}</h3>
+              <p style={styles.tileCopy}>{copy}</p>
+            </Link>
+          ) : (
+            <div key={title} style={{ ...styles.infoTileCard, opacity: 0.75 }}>
+              <h3 style={styles.tileTitle}>{title}</h3>
+              <p style={styles.tileCopy}>{copy}</p>
+            </div>
+          ),
+        )}
       </div>
     </DashboardFrame>
   );
@@ -3052,7 +3210,7 @@ export function WebSubscriptionPlansScreen() {
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Membership Plans</h2>
         </div>
-        <div style={styles.planCardGrid}>
+        <div className="responsive-grid-3col" style={styles.planCardGrid}>
           {subscriptionPlans.map((plan) => (
             <div key={plan.name} style={styles.membershipCard}>
               <span style={styles.subscriptionTag}>Plan</span>
@@ -3061,7 +3219,7 @@ export function WebSubscriptionPlansScreen() {
               <p style={styles.tileCopy}>{plan.detail}</p>
               <button
                 type="button"
-                style={styles.primaryAction}
+                className="primary-action-btn" style={styles.primaryAction}
                 onClick={() => {
                   requireAuth("/subscription-plans");
                 }}
@@ -3076,155 +3234,20 @@ export function WebSubscriptionPlansScreen() {
   );
 }
 
-export function WebSupportScreen() {
-  const { user, state: authState, configured, requireAuth } = useAuthActionGuard();
-  const [tickets, setTickets] = useState<SupportTicketSummary[] | null>(null);
-  const [subject, setSubject] = useState("");
-  const [category, setCategory] = useState("Booking help");
-  const [message, setMessage] = useState("");
-  const [submitState, setSubmitState] = useState({ loading: false, message: "", error: "" });
-  const loading = configured && Boolean(user?.id) && tickets === null;
-
-  useEffect(() => {
-    let active = true;
-    if (!configured || !user?.id) {
-      return () => {
-        active = false;
-      };
-    }
-
-    fetchSupportTickets(user.id)
-      .then((items) => {
-        if (!active) return;
-        setTickets(items);
-      })
-      .catch(() => {
-        if (!active) return;
-        setTickets([]);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [configured, user?.id]);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const authUser = requireAuth("/support");
-    if (!authUser) return;
-
-    setSubmitState({ loading: true, message: "", error: "" });
-    try {
-      await createSupportTicket({
-        userId: authUser.id,
-        userEmail: authUser.email,
-        subject,
-        category,
-        message,
-      });
-      const refreshed = await fetchSupportTickets(authUser.id);
-      setTickets(refreshed);
-      setSubject("");
-      setMessage("");
-      setSubmitState({ loading: false, message: "Support ticket submitted successfully.", error: "" });
-    } catch (error) {
-      setSubmitState({
-        loading: false,
-        message: "",
-        error: error instanceof Error ? error.message : "Unable to submit support ticket.",
-      });
-    }
-  }
-
-  return (
-    <DashboardFrame title="Support" subtitle="Raise a ticket, track responses, and get help from our care team.">
-      <section style={styles.sectionBlock}>
-        <div style={styles.sectionHead}>
-          <h2 style={styles.sectionTitle}>Support Topics</h2>
-        </div>
-        <div style={styles.topicGrid}>
-          {supportTopics.map((topic) => (
-            <div key={topic} style={styles.topicChipCard}>
-              {topic}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {!configured ? <div style={styles.noticeCard}>Supabase env is missing for support access.</div> : null}
-      {configured && authState.loading ? <div style={styles.noticeCard}>Checking your customer session...</div> : null}
-      {configured && !authState.loading && !user ? (
-        <div style={styles.noticeCard}>Log in to raise a support ticket and track responses from our care team.</div>
-      ) : null}
-
-      {configured && user ? (
-        <div style={styles.twoColumnGrid}>
-          <section style={styles.sectionBlock}>
-            <div style={styles.sectionHead}>
-              <h2 style={styles.sectionTitle}>Your Support Tickets</h2>
-            </div>
-            {loading ? <div style={styles.noticeCard}>Loading support tickets...</div> : null}
-            {!loading && tickets && !tickets.length ? <div style={styles.noticeCard}>No support tickets yet.</div> : null}
-            <div style={styles.stackList}>
-              {(tickets || []).map((ticket) => (
-                <div key={ticket.id} style={styles.stepCard}>
-                  <strong>{ticket.subject}</strong>
-                  <p>{ticket.category} · {ticket.priority}</p>
-                  <div style={styles.tileMetaGrid}>
-                    <span>{ticket.status}</span>
-                    <span>{ticket.lastMessageAt || "Just now"}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section style={styles.sectionBlock}>
-            <div style={styles.sectionHead}>
-              <h2 style={styles.sectionTitle}>Raise a Ticket</h2>
-            </div>
-            {submitState.error ? <div style={styles.errorNote}>{submitState.error}</div> : null}
-            {submitState.message ? <div style={styles.noticeCard}>{submitState.message}</div> : null}
-            <form onSubmit={handleSubmit} style={styles.formStack}>
-              <label style={styles.fieldLabel}>Subject</label>
-              <input style={styles.fieldInput} value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Describe the issue" required />
-              <label style={styles.fieldLabel}>Category</label>
-              <select style={styles.fieldInput} value={category} onChange={(event) => setCategory(event.target.value)}>
-                {supportTopics.map((topic) => (
-                  <option key={topic}>{topic}</option>
-                ))}
-              </select>
-              <label style={styles.fieldLabel}>Details</label>
-              <textarea
-                style={styles.textArea}
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="Share booking ids, payment concerns, or support context"
-                required
-              />
-              <button style={styles.primaryAction} type="submit" disabled={submitState.loading}>
-                {submitState.loading ? "Submitting..." : "Submit Support Request"}
-              </button>
-            </form>
-          </section>
-        </div>
-      ) : null}
-    </DashboardFrame>
-  );
-}
-
 export function WebPharmacyCartScreen() {
   const cart = useCart();
   const { requireAuth } = useAuthActionGuard();
   const [submitting, setSubmitting] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [checkoutError, setCheckoutError] = useState("");
 
   async function handleCheckout() {
     if (!cart.lines.length) return;
     const user = requireAuth("/pharmacy/cart");
     if (!user) return;
+    setCheckoutError("");
     if (!deliveryAddress.trim()) {
-      alert("Please add a delivery address before checkout.");
+      setCheckoutError("Please add a delivery address before checkout.");
       return;
     }
     setSubmitting(true);
@@ -3256,6 +3279,10 @@ export function WebPharmacyCartScreen() {
           amount: cart.total,
           paymentMethod: "upi",
           providerName: "Saiman Pharmacy",
+          bookingRef: {
+            kind: "pharmacy_order",
+            items: cart.lines.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
+          },
           customer: {
             name: user.name,
             email: user.email,
@@ -3268,16 +3295,28 @@ export function WebPharmacyCartScreen() {
         },
       });
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Unable to start pharmacy payment.");
+      setCheckoutError(error instanceof Error ? error.message : "Unable to start pharmacy payment.");
       setSubmitting(false);
     }
   }
 
+  if (!cart.itemCount) {
+    return (
+      <DashboardFrame title="Cart" subtitle="Your cart is empty.">
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>Your cart is empty</h2>
+          <p style={styles.emptyCopy}>Browse verified pharmacies and add medicines to get started.</p>
+          <Link href="/pharmacy" style={styles.emptyPanelAction}>Browse Medicines</Link>
+        </section>
+      </DashboardFrame>
+    );
+  }
+
   return (
     <DashboardFrame title="Cart" subtitle={`${cart.itemCount} items ready for secure checkout.`}>
-      <div style={styles.cartLayout}>
+      <div className="responsive-grid-sidebar" style={styles.cartLayout}>
         <section style={styles.sectionBlock}>
-          <div style={styles.noticeCard}>You unlocked free delivery on this order.</div>
+          {cart.saved > 0 ? <div style={styles.noticeCard}>You saved {formatMoney(cart.saved)} on this order.</div> : null}
           {cart.lines.map((line) => (
             <div key={line.product.id} style={styles.cartLine}>
               <MarketplaceImage
@@ -3298,12 +3337,12 @@ export function WebPharmacyCartScreen() {
                   <span style={styles.strikeText}>{formatMoney(line.product.mrp)}</span>
                 </div>
                 <div style={styles.quantityBox}>
-                  <button style={styles.quantityButton} onClick={() => decrementProduct(line.product.id)}>−</button>
+                  <button style={styles.quantityButton} onClick={() => decrementProduct(line.product.id)} aria-label={`Remove one ${line.product.name}`}>−</button>
                   <span>{line.quantity}</span>
-                  <button style={styles.quantityButton} onClick={() => addProductToCart(line.product)}>+</button>
+                  <button style={styles.quantityButton} onClick={() => addProductToCart(line.product)} aria-label={`Add one more ${line.product.name}`}>+</button>
                 </div>
               </div>
-              <button style={styles.removeButton} onClick={() => removeProduct(line.product.id)}>Remove</button>
+              <button style={styles.removeButton} onClick={() => removeProduct(line.product.id)} aria-label={`Remove ${line.product.name} from cart`}>Remove</button>
             </div>
           ))}
         </section>
@@ -3322,7 +3361,8 @@ export function WebPharmacyCartScreen() {
           <div style={styles.summaryLine}><span>Discount on MRP</span><strong style={styles.greenText}>- {formatMoney(cart.saved)}</strong></div>
           <div style={styles.summaryLine}><span>Delivery Fee</span><strong style={styles.greenText}>FREE</strong></div>
           <div style={styles.summaryTotal}><span>To Pay</span><strong>{formatMoney(cart.total)}</strong></div>
-          <button onClick={handleCheckout} style={{ ...styles.primaryAction, width: "100%" }} disabled={submitting || !cart.itemCount}>
+          {checkoutError ? <div style={styles.errorNote}>{checkoutError}</div> : null}
+          <button onClick={handleCheckout} className="primary-action-btn" style={{ ...styles.primaryAction, width: "100%" }} disabled={submitting || !cart.itemCount}>
             {submitting ? "Starting..." : "Proceed to Checkout"}
           </button>
         </aside>
@@ -3348,10 +3388,10 @@ export function WebPharmacyOrdersScreen() {
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No pharmacy orders yet</h2>
           <p style={styles.emptyCopy}>Orders placed from checkout will appear here instantly.</p>
-          <Link href="/pharmacy" style={styles.primaryActionLink}>Browse Medicines</Link>
+          <Link href="/pharmacy" style={styles.emptyPanelAction}>Browse Medicines</Link>
         </section>
       ) : (
-        <div style={styles.orderGrid}>
+        <div className="responsive-grid-3col" style={styles.orderGrid}>
           {orders.map((order) => (
             <div key={order.id} style={styles.orderCard}>
               <strong>{order.pharmacyName}</strong>
@@ -3460,7 +3500,7 @@ function PaymentCallbackInner() {
         {phase === "error" ? (
           <div style={styles.heroActionRowLight}>
             <Link href="/support" style={styles.secondaryAction}>Contact Support</Link>
-            <Link href="/" style={styles.primaryAction}>Go Home</Link>
+            <Link href="/" className="primary-action-btn" style={styles.primaryAction}>Go Home</Link>
           </div>
         ) : null}
         {phase !== "error" && !getPendingPayment() ? <Link href="/" style={{ ...styles.linkAction, marginTop: 8 }}>Go Home</Link> : null}
@@ -3518,9 +3558,6 @@ const styles: Record<string, React.CSSProperties> = {
   authGrid: {
     width: "100%",
     maxWidth: 1120,
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.1fr) minmax(420px, 0.9fr)",
-    gap: 22,
     alignItems: "stretch",
   },
   authVisual: {
@@ -3635,18 +3672,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: themeStyles.ink,
     transition: "var(--motion-fast)",
   },
-  inlineLinkRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  textButton: {
-    border: "none",
-    background: "transparent",
-    color: themeStyles.brand,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
   errorNote: {
     padding: "14px 16px",
     borderRadius: "var(--radius-md)",
@@ -3689,24 +3714,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "1rem",
     cursor: "pointer",
     marginTop: 6,
-  },
-  authDivider: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    color: themeStyles.muted,
-    justifyContent: "center",
-    marginTop: 6,
-  },
-  authDividerLine: {
-    flex: 1,
-    height: 1,
-    background: themeStyles.line,
-  },
-  authQuickRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 12,
   },
   authSwitch: {
     marginTop: 4,
@@ -3767,8 +3774,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.84rem",
   },
   statRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: 14,
   },
   statCard: {
@@ -3868,6 +3873,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: "0.9rem",
     transition: "var(--motion-fast)",
+  },
+  emptyPanelAction: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+    padding: "0 26px",
+    borderRadius: "var(--radius-pill)",
+    background: `linear-gradient(135deg, ${themeStyles.brand}, var(--brand-hover))`,
+    color: "var(--surface-strong)",
+    fontWeight: 800,
+    fontSize: "0.95rem",
+    boxShadow: "var(--shadow-card)",
+    transition: "var(--motion-fast)",
+    letterSpacing: "-0.005em",
+    textDecoration: "none",
   },
   sideFeatureStack: {
     display: "grid",
@@ -4032,8 +4053,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.7,
   },
   dualPromoGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 14,
   },
   subscriptionTile: {
@@ -4143,8 +4162,6 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "var(--shadow-card)",
   },
   doctorGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 14,
   },
   doctorCard: {
@@ -4236,21 +4253,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontSize: "0.8rem",
   },
-  detailHeroGrid: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)",
-    gap: 16,
-  },
+  detailHeroGrid: {},
   profileCard: {
     borderRadius: 12,
     padding: 18,
     background: "var(--surface-strong)",
     border: "1px solid var(--line)",
     boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
-    display: "grid",
-    gridTemplateColumns: "144px minmax(0, 1fr) 128px",
-    gap: 14,
-    alignItems: "start",
   },
   profileImage: {
     height: 144,
@@ -4301,8 +4310,6 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 16,
   },
   infoStatGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 14,
   },
   infoStatCard: {
@@ -4366,18 +4373,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--ink-soft)",
     fontSize: "0.88rem",
   },
-  twoColumnGrid: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) minmax(320px, 0.85fr)",
-    gap: 16,
-  },
+  twoColumnGrid: {},
   onlineMarker: {
     color: "var(--brand)",
     fontWeight: 800,
   },
   specialtyGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 14,
   },
   specialtyCard: {
@@ -4549,7 +4550,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   productGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
     gap: 14,
   },
   productCard: {
@@ -4612,37 +4613,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "1.8rem",
     lineHeight: 1,
     cursor: "pointer",
+    minWidth: 44,
+    minHeight: 44,
   },
-  pharmacyHero: {
-    borderRadius: 12,
-    padding: 18,
-    background: "#2a45b8",
-    color: "var(--surface-strong)",
-    display: "grid",
-    gap: 16,
-  },
-  deliveryBar: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  pharmacySearch: {
-    minHeight: 52,
-    borderRadius: 10,
-    background: "var(--surface-strong)",
-    color: "var(--ink-soft)",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 20px",
-    fontWeight: 600,
-  },
-  cartLayout: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) 320px",
-    gap: 16,
-    alignItems: "start",
-  },
+  cartLayout: {},
   cartLine: {
     display: "grid",
     gridTemplateColumns: "96px minmax(0, 1fr) auto",
@@ -4668,6 +4642,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--ink-soft)",
     fontWeight: 800,
     cursor: "pointer",
+    minHeight: 44,
+    padding: "0 4px",
   },
   summaryPanel: {
     borderRadius: "var(--radius-lg)",
@@ -4708,8 +4684,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#94a3b8",
   },
   orderGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 14,
   },
   orderCard: {
@@ -4795,7 +4769,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   serviceTileGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: 18,
   },
   infoTileCard: {
@@ -4877,11 +4851,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     color: "var(--brand-deep)",
   },
-  metricsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 12,
-  },
+  metricsGrid: {},
   metricCard: {
     borderRadius: 10,
     padding: 16,
@@ -4901,8 +4871,6 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "-0.02em",
   },
   planCardGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 18,
   },
   membershipCard: {
@@ -4917,13 +4885,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   membershipPrice: {
     color: "var(--brand)",
-    fontSize: "1.7rem",
+    fontSize: "clamp(1.15rem, 1rem + 0.6vw, 1.5rem)",
     fontWeight: 900,
-    letterSpacing: "-0.04em",
+    letterSpacing: "-0.02em",
+    whiteSpace: "nowrap",
   },
   topicGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 14,
   },
   topicChipCard: {

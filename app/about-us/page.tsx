@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { CustomerCmsContentPage } from "@/components/customer-site-pages";
+
+export const metadata: Metadata = {
+  title: "About Us",
+  description: "Learn about Saiman Healthcare's mission to connect patients with verified care providers.",
+};
 
 export default function AboutUsPage() {
   return (

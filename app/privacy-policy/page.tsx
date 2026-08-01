@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { CustomerCmsContentPage } from "@/components/customer-site-pages";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description: "How Saiman Healthcare collects, uses, and protects your personal and health information.",
+};
 
 export default function PrivacyPolicyPage() {
   return (

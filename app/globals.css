@@ -1087,6 +1087,78 @@ a {
   }
 }
 
+/* React inline styles can't express media queries, so any two-column layout
+   that only sets gridTemplateColumns inline stays two-column at every
+   viewport width. These classes take over the column definition instead —
+   remove gridTemplateColumns from the inline style object when applying one
+   of these, since inline styles win over classes for any property they set. */
+.responsive-grid-sidebar,
+.responsive-grid-detail,
+.responsive-grid-standard {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .responsive-grid-sidebar {
+    grid-template-columns: minmax(0, 1.15fr) 340px;
+    align-items: start;
+  }
+  .responsive-grid-detail {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  }
+  .responsive-grid-standard {
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  }
+}
+
+.responsive-grid-metrics,
+.responsive-grid-2col,
+.responsive-grid-3col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .responsive-grid-metrics,
+  .responsive-grid-3col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .responsive-grid-2col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .responsive-grid-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .responsive-grid-3col {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.responsive-profile-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .responsive-profile-card {
+    grid-template-columns: 144px minmax(0, 1fr) 128px;
+    align-items: start;
+  }
+}
+
+.primary-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .hover-lift {
   transition: transform var(--motion-standard), box-shadow var(--motion-standard), border-color var(--motion-standard);
 }
@@ -1247,9 +1319,9 @@ a {
 .landing-hero-visual,
 .site-section-card,
 .cms-page-card {
-  border: 1px solid rgba(219, 229, 244, 0.95);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 55px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-floating);
 }
 
 .landing-hero-copy {
@@ -1280,9 +1352,11 @@ a {
 .site-page-intro h1,
 .cms-page-card h1 {
   margin: 0;
-  font-size: clamp(2.4rem, 3.4vw, 4rem);
-  line-height: 1.02;
-  letter-spacing: -0.04em;
+  font-size: clamp(1.9rem, 1.5rem + 1.8vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--ink);
 }
 
 .landing-hero-copy p,
@@ -1292,7 +1366,7 @@ a {
 .landing-blog-body p,
 .support-note,
 .site-footer-support-copy {
-  color: #5b6b82;
+  color: var(--ink-soft);
   line-height: 1.7;
 }
 
@@ -1395,8 +1469,10 @@ a {
 .site-section-head h2,
 .support-hub-grid h2 {
   margin: 6px 0 0;
-  font-size: clamp(1.7rem, 2vw, 2.4rem);
-  letter-spacing: -0.03em;
+  font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .landing-service-grid,

@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { CustomerCmsContentPage } from "@/components/customer-site-pages";
+
+export const metadata: Metadata = {
+  title: "Terms & Conditions",
+  description: "The terms that govern your use of the Saiman Healthcare platform.",
+};
 
 export default function TermsAndConditionsPage() {
   return (

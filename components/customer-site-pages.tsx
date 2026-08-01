@@ -92,22 +92,34 @@ function SitePageIntro({
     <section className="site-page-intro">
       <p className="site-section-eyebrow">{eyebrow}</p>
       <h1>{title}</h1>
-      <p>{description}</p>
+      {description ? <p>{description}</p> : null}
     </section>
   );
 }
 
-function LegalContent({ page, fallbackTitle, fallbackBody }: { page: CmsPageSummary | null; fallbackTitle: string; fallbackBody: string[] }) {
+const LEGAL_PAGE_EYEBROWS: Record<string, string> = {
+  "about-us": "About Us",
+  "privacy-policy": "Privacy",
+  "terms-and-conditions": "Terms",
+};
+
+function LegalContent({
+  page,
+  slug,
+  fallbackTitle,
+  fallbackBody,
+}: {
+  page: CmsPageSummary | null;
+  slug: string;
+  fallbackTitle: string;
+  fallbackBody: string[];
+}) {
   const title = page?.title || fallbackTitle;
   const paragraphs = safeParagraphs(page?.content, fallbackBody);
 
   return (
     <article className="cms-page-card">
-      <SitePageIntro
-        eyebrow="CMS Page"
-        title={title}
-        description="This content is designed to be controlled by super admin from the CMS pages module."
-      />
+      <SitePageIntro eyebrow={LEGAL_PAGE_EYEBROWS[slug] || "Saiman Healthcare"} title={title} description="" />
 
       <div className="cms-rich-text">
         {paragraphs.map((paragraph) => (
@@ -161,11 +173,11 @@ export function CustomerLandingPage() {
 
   const aboutParagraphs = safeParagraphs(aboutPage?.content, [landing.about.description]);
   const serviceCards = [
-    { title: "Doctor Consultation", count: services.doctors, href: "/doctors", detail: "Approved doctors available for consult bookings." },
-    { title: "Pharmacy", count: services.pharmacy, href: "/pharmacy", detail: "Medicine and wellness products managed through providers." },
-    { title: "Lab Tests", count: services.labTests, href: "/lab-tests", detail: "Diagnostics and collection options ready for patients." },
-    { title: "Hospital Services", count: services.hospitals, href: "/hospitals", detail: "Hospital and surgery listings kept live by approvals." },
-    { title: "Imaging", count: services.imaging, href: "/ct-mri", detail: "CT and MRI center approvals available in the portal." },
+    { title: "Doctor Consultation", count: services.doctors, href: "/doctors", detail: "Verified doctors available for online and clinic consultations." },
+    { title: "Pharmacy", count: services.pharmacy, href: "/pharmacy", detail: "Medicines and wellness products with doorstep delivery." },
+    { title: "Lab Tests", count: services.labTests, href: "/lab-tests", detail: "Diagnostics with home collection or center visits." },
+    { title: "Hospital Services", count: services.hospitals, href: "/hospitals", detail: "Verified hospitals and surgery centers near you." },
+    { title: "Imaging", count: services.imaging, href: "/ct-mri", detail: "CT and MRI scans at verified diagnostic centers." },
     { title: "Care Staff & Equipment", count: services.staffing + services.rental, href: "/care-staff", detail: "Nursing, attendants, and recovery equipment support." },
   ];
 
@@ -228,7 +240,7 @@ export function CustomerLandingPage() {
         <div className="site-section-head">
           <div>
             <p className="site-section-eyebrow">Services @ Home</p>
-            <h2>Dynamic service visibility powered by provider approvals.</h2>
+            <h2>Everything your family needs, verified and ready to book.</h2>
           </div>
           <Link href="/support" className="pill-link">
             Need help choosing?
@@ -277,9 +289,9 @@ export function CustomerLandingPage() {
           {!blogs.length ? (
             <article className="landing-blog-card landing-blog-card-empty">
               <div className="landing-blog-body">
-                <span>CMS ready</span>
-                <h3>Published blogs will appear here.</h3>
-                <p>Use the super admin CMS blog manager to add marketing articles, recovery education, and announcements.</p>
+                <span>Coming Soon</span>
+                <h3>New health articles are on the way.</h3>
+                <p>Check back soon for guidance on consultations, diagnostics, medicines, and home recovery.</p>
               </div>
             </article>
           ) : null}
@@ -324,7 +336,7 @@ export function CustomerCmsContentPage({
 
   return (
     <CustomerSiteShell footer={landing.footer}>
-      <LegalContent page={page} fallbackTitle={fallbackTitle} fallbackBody={fallbackBody} />
+      <LegalContent page={page} slug={slug} fallbackTitle={fallbackTitle} fallbackBody={fallbackBody} />
     </CustomerSiteShell>
   );
 }
@@ -359,7 +371,7 @@ export function CustomerBlogsPage() {
       <SitePageIntro
         eyebrow="Latest Articles"
         title="Healthcare stories, explainers, and patient guidance"
-        description="Published blog posts from the CMS will appear here automatically for patients and visitors."
+        description="Practical guidance on consultations, diagnostics, medicines, and staying healthy at home."
       />
 
       <section className="landing-blog-grid landing-blog-grid-full">
@@ -372,7 +384,7 @@ export function CustomerBlogsPage() {
             <div className="landing-blog-body">
               <span>{blog.category || "Healthcare"}</span>
               <h3>{blog.title}</h3>
-              <p>{blog.excerpt || contentToParagraphs(blog.content)[0] || "Published content from the CMS."}</p>
+              <p>{blog.excerpt || contentToParagraphs(blog.content)[0] || "Read the latest patient care update."}</p>
               <div className="landing-blog-meta">
                 <small>{blog.author || "Saiman Healthcare"}</small>
                 <small>{formatDate(blog.published_at || blog.created_at)}</small>
@@ -384,9 +396,9 @@ export function CustomerBlogsPage() {
         {!blogs.length ? (
           <article className="landing-blog-card landing-blog-card-empty">
             <div className="landing-blog-body">
-              <span>No published blogs</span>
-              <h3>Use the CMS blogs screen to publish articles.</h3>
-              <p>Once a blog is marked as Published in the super admin panel, it will show up here.</p>
+              <span>Coming Soon</span>
+              <h3>New health articles are on the way.</h3>
+              <p>Check back soon for guidance on consultations, diagnostics, medicines, and home recovery.</p>
             </div>
           </article>
         ) : null}
