@@ -4,11 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
-import { CustomerShellAuthActions, useCustomerUser } from "@/components/customer-live";
-import { primaryNav, recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
+import { useCustomerUser } from "@/components/customer-live";
+import { SiteHeader } from "@/components/site-header";
+import { recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
 import {
+  cancelInstantCallRequest,
   createDoctorAppointment,
   createPharmacyOrder,
+  createStaffingBooking,
   createSupportTicket,
   fetchActiveInstantCallRequest,
   fetchApprovedCtmriServices,
@@ -19,21 +22,30 @@ import {
   fetchApprovedRentalEquipment,
   fetchApprovedStaffingProviders,
   fetchCustomerProfile,
+  fetchInstantCallHistory,
   fetchPatientAppointments,
   fetchPatientPharmacyOrders,
+  fetchPatientStaffingBookings,
   fetchSupportTickets,
   loginCustomer,
+  markInstantCallConnecting,
   requestInstantCall,
   signupCustomer,
+  STAFF_TYPES,
+  STAFFING_DURATIONS,
+  subscribeToInstantCallRequest,
+  subscribeToPatientStaffingBookings,
   type AppointmentSummary,
   type CtmriServiceSummary,
   type CustomerProfileSummary,
   type DoctorSummary,
   type HospitalServiceSummary,
+  type InstantCallSummary,
   type LabTestSummary,
   type PharmacyOrderSummary,
   type PharmacyProductSummary,
   type RentalEquipmentSummary,
+  type StaffingBookingSummary,
   type StaffingProviderSummary,
   type SupportTicketSummary,
 } from "@/lib/customer-web-live";
@@ -54,6 +66,17 @@ import { beginWebPayment, clearPendingPayment, getPendingPayment, linkTransactio
 
 function formatMoney(value: number) {
   return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function formatExperience(years: number) {
+  const clamped = Math.max(0, Math.round(Number(years) || 0));
+  if (!clamped) return "Experience on file";
+  return `${clamped}+ years experience`;
+}
+
+function formatDoctorRating(rating: number, reviewCount: number) {
+  if (!reviewCount) return "New on Saiman";
+  return `⭐ ${rating.toFixed(1)} (${reviewCount} review${reviewCount === 1 ? "" : "s"})`;
 }
 
 function formatDate(date: string) {
@@ -493,7 +516,7 @@ function AuthPageTemplate({
 export function WebLoginScreen() {
   return (
     <AuthPageTemplate
-      title="Sign in to the same customer journey shown in the app."
+      title="Sign in to manage your appointments, orders, and care records."
       subtitle="Use your Saiman customer account to access doctor booking, instant call, pharmacy checkout, appointments, and profile data from the web."
       cardTitle="Welcome back"
       cardSubtitle="Continue to your health dashboard"
@@ -506,7 +529,7 @@ export function WebSignupScreen() {
   return (
     <AuthPageTemplate
       title="Create one healthcare account for all customer services."
-      subtitle="Set up your patient profile once, then use the same web dashboard for doctors, pharmacy, records, instant calls, and future payments."
+      subtitle="Set up your patient profile once to book doctors, order medicines, and manage every visit from one dashboard."
       cardTitle="Create your account"
       cardSubtitle="Set up your patient profile to continue"
       mode="signup"
@@ -525,70 +548,19 @@ function DashboardFrame({
   children: React.ReactNode;
   accent?: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const { user } = useCustomerUser();
-
   return (
-    <div style={styles.shell}>
-      <aside style={styles.sidebar}>
-        <Link href="/" style={styles.brandWrap}>
-          <span style={styles.brandMark}>✚</span>
-          <div>
-            <strong style={styles.brandTitle}>Saiman Healthcare</strong>
-            <small style={styles.brandSub}>Customer Care Portal</small>
-          </div>
-        </Link>
-
-        <div style={styles.navGroupLabel}>Menu</div>
-        <nav style={styles.navList}>
-          {primaryNav.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link key={item.href} href={item.href} style={{ ...styles.navItem, ...(active ? styles.navItemActive : {}) }}>
-                <span style={{ ...styles.navItemIcon, ...(active ? styles.navItemIconActive : {}) }}>{item.label.slice(0, 1)}</span>
-                <span style={styles.navItemLabel}>{item.label}</span>
-                {active ? <span style={styles.navItemDot} /> : null}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div style={styles.sidebarPromo}>
-          <span style={styles.sidebarPromoTag}>Live support</span>
-          <h3 style={styles.sidebarPromoTitle}>Need urgent medical guidance?</h3>
-          <p style={styles.sidebarPromoCopy}>Start the same instant-call flow from the app, now optimized for web.</p>
-          <Link href="/instant-call" style={styles.sidebarPromoButton}>Start Instant Call</Link>
-        </div>
-      </aside>
+    <div className="app-shell">
+      <SiteHeader mode="portal" />
 
       <div style={styles.mainArea}>
-        <header style={styles.topNav}>
-          <div style={styles.topNavSearch}>
-            <span style={styles.topNavSearchIcon}>⌕</span>
-            <span style={styles.topNavSearchText}>Search doctors, tests, medicines, orders…</span>
-          </div>
-          <div style={styles.topNavRight}>
-            {accent}
-            <button type="button" style={styles.iconButton} aria-label="Notifications">🔔</button>
-            <div style={styles.topbarAccount}>
-              <div style={styles.accountAvatar}>{(user?.name || "G").slice(0, 1).toUpperCase()}</div>
-              <div style={styles.accountMeta}>
-                <strong>{user?.name || "Guest Customer"}</strong>
-                <span>{user?.email || "Browse first, sign up when you book"}</span>
-              </div>
-              <CustomerShellAuthActions />
-            </div>
-          </div>
-        </header>
-
         <main style={styles.mainScroll}>
           <div style={styles.mainInner}>
             <div style={styles.pageHeaderRow}>
               <div>
-                <div style={styles.pageEyebrow}>Saiman Customer Experience</div>
                 <h1 style={styles.pageTitle}>{title}</h1>
                 <p style={styles.pageSubtitle}>{subtitle}</p>
               </div>
+              {accent ? <div>{accent}</div> : null}
             </div>
             <section style={styles.mainContent}>{children}</section>
           </div>
@@ -638,7 +610,7 @@ export function WebHomeScreen() {
   return (
     <DashboardFrame
       title={`Good morning, ${user?.name || "Customer"}!`}
-      subtitle="This web dashboard follows the same customer flow as the app: discover services, book doctors, pay online, and manage orders from one place."
+      subtitle="Discover verified doctors, order medicines, book diagnostics, and manage every appointment from one place."
       accent={cart.itemCount ? <Link href="/pharmacy/cart" style={styles.headerPill}>Cart · {cart.itemCount}</Link> : undefined}
     >
       <div style={styles.statRow}>
@@ -663,13 +635,13 @@ export function WebHomeScreen() {
 
         <section style={styles.sideFeatureStack}>
           <div style={styles.searchModule}>
-            <strong>Search the same care categories shown in the app</strong>
+            <strong>Search doctors, tests, medicines, and more</strong>
             <span>Doctors, tests, medicines, hospitals, and support</span>
           </div>
           <div style={styles.tipCard}>
             <span style={styles.tipTag}>Lab Tests</span>
             <strong>How to prepare for a lab test</strong>
-            <p>Simple web-friendly content blocks can match the app sections while giving users more room to read and act.</p>
+            <p>Fast for 8–12 hours before most blood tests, carry a valid photo ID, and bring any previous reports for comparison.</p>
           </div>
         </section>
       </div>
@@ -732,7 +704,7 @@ export function WebHomeScreen() {
           <div style={styles.teleConsultCard}>
             <span style={styles.liveChip}>LIVE</span>
             <h3 style={styles.teleTitle}>Teleconsult</h3>
-            <p style={styles.teleCopy}>Talk to a doctor anytime, anywhere from the same instant-call workflow.</p>
+            <p style={styles.teleCopy}>Talk to an online doctor right away for urgent, non-emergency guidance.</p>
             <Link href="/instant-call" style={styles.primaryActionLink}>Start Call</Link>
           </div>
           <div style={styles.dualPromoGrid}>
@@ -774,7 +746,7 @@ export function WebDoctorsScreen() {
   });
 
   return (
-    <DashboardFrame title="Doctor Consultation" subtitle="Find and consult top doctors with the same discover-to-book flow shown in the mobile app.">
+    <DashboardFrame title="Doctor Consultation" subtitle="Find verified specialists, compare consultation fees, and book an appointment that fits your schedule.">
       <section style={styles.heroWideCard}>
         <div>
           <span style={styles.bluePill}>Verified Doctors</span>
@@ -823,10 +795,12 @@ export function WebDoctorsScreen() {
               </div>
               <div style={styles.doctorSpecialty}>{doctor.specialty}</div>
               <p style={styles.doctorMeta}>{doctor.hospital} · {doctor.city}</p>
-              <p style={styles.doctorMeta}>{doctor.experience}+ years experience · ⭐ {doctor.rating || 4.8}</p>
+              <p style={styles.doctorMeta}>
+                {formatExperience(doctor.experience)} · {formatDoctorRating(doctor.rating, doctor.reviewCount)}
+              </p>
               <div style={styles.doctorFooter}>
                 <strong>{formatMoney(doctor.fee)}</strong>
-                <span style={styles.availableLabel}>Available today</span>
+                <span style={styles.availableLabel}>Verified profile</span>
               </div>
             </div>
           </Link>
@@ -906,7 +880,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   }
 
   return (
-    <DashboardFrame title="Doctor Profile" subtitle="Review doctor details, choose a plan, and continue to the same Razorpay-backed consultation flow.">
+    <DashboardFrame title="Doctor Profile" subtitle="Review doctor details, choose a consultation plan, and book securely.">
       {loading ? <div style={styles.noticeCard}>Loading doctor profile...</div> : null}
       {doctor ? (
         <>
@@ -921,8 +895,8 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
                 <div style={styles.doctorSpecialty}>{doctor.specialty}</div>
                 <p style={styles.doctorMeta}>Verified medical practitioner</p>
                 <div style={styles.profileStats}>
-                  <span style={styles.metricBadge}>⭐ 4.8</span>
-                  <span style={styles.metricBadge}>{doctor.experience}+ yrs</span>
+                  <span style={styles.metricBadge}>{formatDoctorRating(doctor.rating, doctor.reviewCount)}</span>
+                  <span style={styles.metricBadge}>{formatExperience(doctor.experience)}</span>
                   <span style={styles.metricBadge}>{doctor.hospital}</span>
                 </div>
               </div>
@@ -934,7 +908,7 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
             <div style={styles.aboutCard}>
               <h3 style={styles.sectionTitle}>About Doctor</h3>
               <p style={styles.blogDetail}>
-                {doctor.name} is verified on Saiman Healthcare and available for appointments through the same customer platform used by the app.
+                {doctor.name} is a verified practitioner on Saiman Healthcare, available for appointments through our doctor network.
               </p>
               <div style={styles.infoStatGrid}>
                 <div style={styles.infoStatCard}>
@@ -1019,24 +993,86 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   );
 }
 
+const INSTANT_CALL_SPECIALTIES = [
+  "Cardiologist",
+  "Dermatologist",
+  "Endocrinologist",
+  "ENT Specialist",
+  "General Physician",
+  "Gynaecologist",
+  "Neurologist",
+  "Orthopaedic",
+];
+
+function instantCallPhaseCopy(status: string): { title: string; detail: string } {
+  switch (status) {
+    case "pending":
+      return { title: "Searching for an available doctor...", detail: "We are matching your request with an online specialist. This usually takes under a minute." };
+    case "assigned":
+      return { title: "A doctor has been assigned", detail: "Your request is being reviewed by the assigned doctor." };
+    case "doctor_accepted":
+      return { title: "Doctor accepted your request", detail: "You can join the call now." };
+    case "connecting":
+      return { title: "Connecting your call", detail: "Live voice and video calling is available in the Saiman Healthcare mobile app. This page will keep showing your live call status." };
+    case "in_progress":
+      return { title: "Consultation in progress", detail: "Your call is currently active." };
+    default:
+      return { title: "Request update", detail: "" };
+  }
+}
+
 export function WebInstantCallScreen() {
-  const { user, requireAuth } = useAuthActionGuard();
+  const { user, state: authState, requireAuth } = useAuthActionGuard();
   const [specialty, setSpecialty] = useState("General Physician");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
-  const [request, setRequest] = useState<{ status: string; specialty: string; callReason: string } | null>(null);
+  const [activeRequest, setActiveRequest] = useState<InstantCallSummary | null>(null);
+  const [history, setHistory] = useState<InstantCallSummary[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState("");
+  const loading = authState.loading || (Boolean(user) && dataLoading);
 
   useEffect(() => {
     if (!user) return;
-    fetchActiveInstantCallRequest(user.id).then((value) => {
-      setRequest(value ? { status: value.status, specialty: value.specialty, callReason: value.callReason } : null);
-    });
+    let active = true;
+
+    function refresh() {
+      fetchActiveInstantCallRequest(user!.id)
+        .then((value) => {
+          if (active) setActiveRequest(value);
+        })
+        .catch(() => {
+          if (active) setActiveRequest(null);
+        })
+        .finally(() => {
+          if (active) setDataLoading(false);
+        });
+      fetchInstantCallHistory(user!.id)
+        .then((items) => {
+          if (active) setHistory(items);
+        })
+        .catch(() => undefined);
+    }
+
+    refresh();
+    const unsubscribe = subscribeToInstantCallRequest(user.id, refresh);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [user]);
 
   async function submit() {
+    setError("");
     const authUser = requireAuth("/instant-call");
     if (!authUser) return;
+    if (!reason.trim()) {
+      setError("Tell us the reason for this call.");
+      return;
+    }
     setSubmitting(true);
     try {
       await requestInstantCall({
@@ -1045,55 +1081,124 @@ export function WebInstantCallScreen() {
         notes,
         preferredLanguage: "English",
       });
-      if (authUser) {
-        const next = await fetchActiveInstantCallRequest(authUser.id);
-        if (next) {
-          setRequest({ status: next.status, specialty: next.specialty, callReason: next.callReason });
-        }
-      }
+      const next = await fetchActiveInstantCallRequest(authUser.id);
+      setActiveRequest(next);
       setReason("");
       setNotes("");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Unable to request instant call.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to request an instant call.");
     } finally {
       setSubmitting(false);
     }
   }
 
+  async function handleJoin() {
+    if (!activeRequest) return;
+    setJoining(true);
+    try {
+      await markInstantCallConnecting(activeRequest.id, "voice");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to connect this call.");
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!activeRequest) return;
+    setCancelling(true);
+    try {
+      await cancelInstantCallRequest(activeRequest.id, "Cancelled by patient from the customer web app.");
+      setActiveRequest(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to cancel this request.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  const canJoin = activeRequest ? ["doctor_accepted", "connecting"].includes(activeRequest.status) : false;
+  const canCancel = activeRequest ? !["in_progress"].includes(activeRequest.status) : false;
+
   return (
-    <DashboardFrame title="Instant Call" subtitle="Request a quick voice consultation with an online doctor using the same specialty-led flow as the app.">
-      <div style={styles.twoColumnGrid}>
+    <DashboardFrame title="Instant Doctor Call" subtitle="Connect with an online doctor right away for urgent, non-emergency medical guidance.">
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading instant call status...</div> : null}
+
+      {!loading && activeRequest ? (
+        <section style={styles.heroWideCard}>
+          <span style={styles.bluePill}>{activeRequest.specialty}</span>
+          <h2 style={styles.heroHeadingAlt}>{instantCallPhaseCopy(activeRequest.status).title}</h2>
+          <p style={styles.heroCopy}>{instantCallPhaseCopy(activeRequest.status).detail}</p>
+          {activeRequest.doctorName ? <p style={styles.heroCopy}>Doctor: {activeRequest.doctorName}</p> : null}
+          <div style={styles.heroActionRow}>
+            {canJoin ? (
+              <button onClick={handleJoin} style={styles.primaryAction} disabled={joining || activeRequest.status === "connecting"}>
+                {activeRequest.status === "connecting" ? "Connecting..." : joining ? "Joining..." : "Join Call"}
+              </button>
+            ) : null}
+            {canCancel ? (
+              <button onClick={handleCancel} style={styles.secondaryActionLink} disabled={cancelling}>
+                {cancelling ? "Cancelling..." : "Cancel Request"}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {!loading && !activeRequest ? (
+        <div style={styles.twoColumnGrid}>
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Choose a specialty</h2>
+            </div>
+            <div style={styles.specialtyGrid}>
+              {INSTANT_CALL_SPECIALTIES.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setSpecialty(item)}
+                  style={{ ...styles.specialtyCard, ...(specialty === item ? styles.specialtyCardActive : {}) }}
+                >
+                  <span style={styles.specialtyIcon}>✚</span>
+                  <span>{item}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section style={styles.sectionBlock}>
+            <h2 style={styles.sectionTitle}>Request details</h2>
+            <label style={styles.fieldLabel}>Reason for this call</label>
+            <input style={styles.fieldInput} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Describe why you need to speak with a doctor" />
+            <label style={styles.fieldLabel}>Symptoms or notes (optional)</label>
+            <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Any symptoms or context that will help the doctor" />
+            <button onClick={submit} style={{ ...styles.primaryAction, marginTop: 18 }} disabled={submitting}>
+              {submitting ? "Requesting..." : "Request Instant Call"}
+            </button>
+          </section>
+        </div>
+      ) : null}
+
+      {history.length ? (
         <section style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
-            <h2 style={styles.sectionTitle}>Relevant specialty</h2>
-            <span style={styles.onlineMarker}>5 online</span>
+            <h2 style={styles.sectionTitle}>Recent Requests</h2>
           </div>
-          <div style={styles.specialtyGrid}>
-            {["Cardiologist", "Dermatologist", "Endocrinologist", "ENT Specialist", "General Physician", "Gynaecologist", "Neurologist", "Orthopaedic"].map((item) => (
-              <button
-                key={item}
-                onClick={() => setSpecialty(item)}
-                style={{ ...styles.specialtyCard, ...(specialty === item ? styles.specialtyCardActive : {}) }}
-              >
-                <span style={styles.specialtyIcon}>✚</span>
-                <span>{item}</span>
-              </button>
+          <div style={styles.appointmentGrid}>
+            {history.map((item) => (
+              <div key={item.id} style={styles.appointmentCard}>
+                <strong>{item.specialty}</strong>
+                <span>{item.callReason || "Instant call request"}</span>
+                <small>{formatDate(item.createdAt)}</small>
+                <div style={styles.doctorFooter}>
+                  <span>{item.status.replace(/_/g, " ")}</span>
+                </div>
+              </div>
             ))}
           </div>
         </section>
-
-        <section style={styles.sectionBlock}>
-          <h2 style={styles.sectionTitle}>Request details</h2>
-          <label style={styles.fieldLabel}>Call purpose / reason</label>
-          <input style={styles.fieldInput} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Describe the purpose of the call" />
-          <label style={styles.fieldLabel}>Symptoms or notes</label>
-          <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Symptoms or notes" />
-          {request ? <div style={styles.noticeCard}>Current request: {request.specialty} · {request.status}</div> : null}
-          <button onClick={submit} style={{ ...styles.primaryAction, marginTop: 18 }} disabled={submitting}>
-            {submitting ? "Requesting..." : "Request instant call"}
-          </button>
-        </section>
-      </div>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -1116,7 +1221,7 @@ export function WebAppointmentsScreen() {
   const filtered = merged.filter((item) => item.status === tab);
 
   return (
-    <DashboardFrame title="My Appointments" subtitle="Manage upcoming consultations and track the same booking state across web and app.">
+    <DashboardFrame title="My Appointments" subtitle="Manage upcoming consultations, track status, and review your visit history.">
       <section style={styles.heroWideCard}>
         <h2 style={styles.heroHeadingAlt}>Your care schedule at a glance</h2>
         <p style={styles.heroCopy}>Track visits, online consults, reports, and prescriptions from one clean timeline.</p>
@@ -1166,7 +1271,7 @@ export function WebProfileScreen() {
   }, [user]);
 
   return (
-    <DashboardFrame title="My Account" subtitle="Manage your consultation account, appointments, records, and support entry points from one web view.">
+    <DashboardFrame title="My Account" subtitle="Manage your profile, appointments, records, and support requests from one place.">
       <div style={styles.profileLayout}>
         <section style={styles.profileOverview}>
           <div style={styles.profileMonogram}>P</div>
@@ -1292,7 +1397,7 @@ export function WebPharmacyScreen() {
   return (
     <DashboardFrame
       title="Pharmacy"
-      subtitle="Browse medicine categories, add products, and continue to the same cart and payment flow inspired by the app."
+      subtitle="Browse medicine categories, compare prices, and check out securely for doorstep delivery."
       accent={cart.itemCount ? <Link href="/pharmacy/cart" style={styles.headerPill}>Proceed to Checkout · {cart.itemCount}</Link> : undefined}
     >
       <section style={styles.pharmacyHero}>
@@ -1306,7 +1411,7 @@ export function WebPharmacyScreen() {
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Pharmacy Banner</span>
         <h2 style={styles.heroHeadingAlt}>Order medicines from verified pharmacies</h2>
-        <p style={styles.heroCopy}>The web view keeps the same banner-driven discovery and cart journey as the customer app.</p>
+        <p style={styles.heroCopy}>Order medicines from verified pharmacies with secure checkout and doorstep delivery.</p>
       </section>
 
       {loading ? <ProductGridSkeleton /> : null}
@@ -1344,11 +1449,11 @@ export function WebLabTestsScreen() {
   });
 
   return (
-    <DashboardFrame title="Lab Tests" subtitle="Search diagnostics, compare prices, and follow the same compare-and-book lab journey in a proper web layout.">
+    <DashboardFrame title="Lab Tests" subtitle="Search diagnostic tests, compare lab prices, and choose home collection or a center visit.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Lab Tests</span>
         <h2 style={styles.heroHeadingAlt}>Trusted diagnostics with clear pricing and faster reports.</h2>
-        <p style={styles.heroCopy}>Browse approved tests, review report timelines, and compare lab options from the same shared data used by the customer app.</p>
+        <p style={styles.heroCopy}>Browse verified lab tests, review report turnaround times, and compare pricing across labs near you.</p>
       </section>
 
       <section style={styles.sectionBlock}>
@@ -1409,11 +1514,11 @@ export function WebHospitalsScreen() {
   });
 
   return (
-    <DashboardFrame title="Hospitals & Surgeries" subtitle="Browse approved hospitals and surgery partners with a wider web view of the same hospital discovery flow.">
+    <DashboardFrame title="Hospitals & Surgeries" subtitle="Browse verified hospitals and surgery centers, compare specialties, and request a consultation.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Hospital Discovery</span>
         <h2 style={styles.heroHeadingAlt}>Compare hospitals, specialties, and treatment access in one place.</h2>
-        <p style={styles.heroCopy}>This web screen mirrors the mobile hospital browsing experience but gives more room for addresses, capacity, and next steps.</p>
+        <p style={styles.heroCopy}>Compare hospital specialties, bed availability, and locations before requesting a consultation.</p>
       </section>
 
       <section style={styles.sectionBlock}>
@@ -1481,11 +1586,11 @@ export function WebCtmriScreen() {
   });
 
   return (
-    <DashboardFrame title="CT / MRI" subtitle="Compare imaging services, center details, and pricing from the same approved diagnostic catalog used by the app.">
+    <DashboardFrame title="CT / MRI" subtitle="Compare scan prices, locations, and available diagnostic centers.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Imaging Services</span>
         <h2 style={styles.heroHeadingAlt}>Book scans and compare approved diagnostic centers.</h2>
-        <p style={styles.heroCopy}>See live CT and MRI offerings with web-friendly cards while following the same customer discovery path as the app.</p>
+        <p style={styles.heroCopy}>Find verified imaging centers near you and compare pricing before you book.</p>
       </section>
 
       <section style={styles.sectionBlock}>
@@ -1549,11 +1654,11 @@ export function WebRentalEquipmentScreen() {
   });
 
   return (
-    <DashboardFrame title="Rental Equipment" subtitle="Browse patient-care equipment, compare rental pricing, and review the same rental inventory service family shown in the app.">
+    <DashboardFrame title="Rental Equipment" subtitle="Browse patient-care equipment, compare rental pricing, and choose the right support for home recovery.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Rental Equipment</span>
         <h2 style={styles.heroHeadingAlt}>Wheelchairs, patient beds, supports, and home-care gear in one place.</h2>
-        <p style={styles.heroCopy}>This web catalog keeps the same rental discovery intent while giving more room for pricing, deposit, and provider details.</p>
+        <p style={styles.heroCopy}>Compare daily, weekly, and monthly rental pricing, security deposits, and provider details before you book.</p>
       </section>
 
       <section style={styles.sectionBlock}>
@@ -1613,11 +1718,11 @@ export function WebHealthCardScreen() {
   }
 
   return (
-    <DashboardFrame title="Health Card" subtitle="Review customer plans, document readiness, and health-card style member benefits from a dedicated web entry point.">
+    <DashboardFrame title="Health Card" subtitle="Review health card plans, eligibility, and required documents before you apply.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Health Card</span>
         <h2 style={styles.heroHeadingAlt}>Membership plans, records, and care benefits in one customer view.</h2>
-        <p style={styles.heroCopy}>The mobile app uses this service family for plan access and documentation, so this web page brings the same workflows together cleanly.</p>
+        <p style={styles.heroCopy}>A Saiman Health Card gives your family faster access to partner hospitals and simplified billing.</p>
       </section>
 
       <div style={styles.twoColumnGrid}>
@@ -1646,7 +1751,7 @@ export function WebHealthCardScreen() {
             {[
               ["Health card details", "Keep your membership reference, identity details, and service eligibility ready."],
               ["Documents", "Prepare prescriptions, reports, and patient documents for assisted verification."],
-              ["Benefits", "Use the same plan family for savings on consultations, diagnostics, and pharmacy journeys."],
+              ["Benefits", "Save on consultations, diagnostics, and pharmacy orders with your membership plan."],
             ].map(([title, copy]) => (
               <div key={title} style={styles.stepCard}>
                 <strong>{title}</strong>
@@ -1677,11 +1782,15 @@ export function WebCareStaffScreen() {
   });
 
   return (
-    <DashboardFrame title="Care Staff" subtitle="Find approved nurses, caregivers, and trained support staff from the same staffing service family available in the app.">
+    <DashboardFrame title="Home Care & Staffing" subtitle="Trained nurses, caregivers, and support professionals for recovery, elder care, and post-surgery support at home.">
       <section style={styles.heroWideCard}>
-        <span style={styles.bluePill}>Care Staff</span>
-        <h2 style={styles.heroHeadingAlt}>Browse approved home-care and support professionals.</h2>
-        <p style={styles.heroCopy}>This web screen mirrors the staffing discovery layer so patients can review availability, experience, and rates with more space.</p>
+        <span style={styles.bluePill}>Home Care</span>
+        <h2 style={styles.heroHeadingAlt}>Get verified care staff at home, on your schedule.</h2>
+        <p style={styles.heroCopy}>Tell us the type of support your patient needs and our dispatch team will confirm pricing and assign a qualified professional.</p>
+        <div style={styles.heroActionRow}>
+          <Link href="/care-staff/request" style={styles.primaryActionLink}>Request Care Staff</Link>
+          <Link href="/care-staff/bookings" style={styles.secondaryActionLink}>My Requests</Link>
+        </div>
       </section>
 
       <section style={styles.sectionBlock}>
@@ -1694,11 +1803,11 @@ export function WebCareStaffScreen() {
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
-      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved care staff providers available yet.</div> : null}
+      {!loading && !filtered.length ? <div style={styles.noticeCard}>No approved care staff providers available yet in your area. You can still submit a request and our team will help.</div> : null}
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((item) => (
-          <div key={item.id} style={styles.infoTileCard}>
+          <Link key={item.id} href="/care-staff/request" style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.avatarUrl}
               fallbackSrc={APP_FALLBACK_IMAGES.careTeam}
@@ -1712,27 +1821,303 @@ export function WebCareStaffScreen() {
             <p style={styles.tileCopy}>{item.qualifications || "Approved staffing provider"}</p>
             <div style={styles.tileMetaGrid}>
               <span>{item.city}</span>
-              <span>{item.experience != null ? `${item.experience}+ yrs` : "Experience on request"}</span>
+              <span>{item.experience != null && item.experience > 0 ? `${item.experience}+ yrs experience` : "Experience on file"}</span>
             </div>
             <div style={styles.tileFooter}>
-              <strong>{item.fee != null ? `${formatMoney(item.fee)} / shift` : "Quote on request"}</strong>
-              <span style={styles.availableLabel}>Request staff</span>
+              <strong>{item.fee != null ? `${formatMoney(item.fee)} / shift` : "Pricing confirmed on request"}</strong>
+              <span style={styles.availableLabel}>Request this professional</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </DashboardFrame>
   );
 }
 
+const STAFF_TYPE_ICON: Record<string, string> = {
+  Nurse: "🩺",
+  Physiotherapist: "🏃",
+  Caregiver: "🤝",
+  Doctor: "🩹",
+  "Home Assistant": "🏠",
+  "Lab Technician": "🧪",
+};
+
+export function WebStaffingRequestScreen() {
+  const router = useRouter();
+  const { requireAuth } = useAuthActionGuard();
+  const [selectedStaff, setSelectedStaff] = useState<Record<string, number>>({});
+  const [patientCondition, setPatientCondition] = useState("");
+  const [fullAddress, setFullAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(todayIsoDate);
+  const [scheduledTime, setScheduledTime] = useState("10:00");
+  const [durationHours, setDurationHours] = useState<number>(STAFFING_DURATIONS[1]);
+  const [specialInstructions, setSpecialInstructions] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const selections = STAFF_TYPES.map((type) => ({ type, count: selectedStaff[type] || 0 })).filter((item) => item.count > 0);
+  const numberOfStaff = selections.reduce((sum, item) => sum + item.count, 0);
+  const staffSummary = selections.length ? selections.map((item) => `${item.count} ${item.type}${item.count > 1 ? "s" : ""}`).join(", ") : "";
+
+  function updateCount(type: string, delta: number) {
+    setSelectedStaff((current) => {
+      const next = Math.max(0, (current[type] || 0) + delta);
+      const updated = { ...current };
+      if (next <= 0) delete updated[type];
+      else updated[type] = next;
+      return updated;
+    });
+  }
+
+  async function handleSubmit() {
+    setError("");
+    const user = requireAuth("/care-staff/request");
+    if (!user) return;
+    if (!selections.length) {
+      setError("Choose at least one type of care staff.");
+      return;
+    }
+    if (!fullAddress.trim() || !city.trim()) {
+      setError("Add the service address and city.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await createStaffingBooking({
+        patientId: user.id,
+        staffType: staffSummary,
+        numberOfStaff,
+        bookingItems: selections.map((item) => ({ staffType: item.type, quantity: item.count })),
+        patientCondition,
+        fullAddress,
+        city,
+        scheduledDate,
+        scheduledTime,
+        durationHours,
+        specialInstructions,
+      });
+      router.push("/care-staff/bookings?requested=1");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to submit this request.");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <DashboardFrame title="Request Care Staff" subtitle="Share your patient's care needs, schedule, and address. Our dispatch team confirms pricing and assigns a verified professional.">
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>What type of care staff do you need?</h2>
+        </div>
+        <div style={styles.serviceTileGrid}>
+          {STAFF_TYPES.map((type) => {
+            const count = selectedStaff[type] || 0;
+            const active = count > 0;
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => updateCount(type, active ? -count : 1)}
+                style={{ ...styles.filterChip, ...(active ? styles.filterChipActive : {}), display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 12px" }}
+              >
+                <span style={{ fontSize: 28 }}>{STAFF_TYPE_ICON[type] || "🩺"}</span>
+                <span>{type}</span>
+                {active ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateCount(type, -1);
+                      }}
+                      style={styles.quantityButton}
+                    >
+                      −
+                    </span>
+                    <strong>{count}</strong>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateCount(type, 1);
+                      }}
+                      style={styles.quantityButton}
+                    >
+                      +
+                    </span>
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+        {numberOfStaff ? <p style={styles.tileCopy}>Selected: {staffSummary} ({numberOfStaff} total)</p> : null}
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Schedule &amp; Address</h2>
+        </div>
+        <div style={styles.formStack}>
+          <label style={styles.fieldLabel}>Service address</label>
+          <textarea style={styles.textArea} value={fullAddress} onChange={(event) => setFullAddress(event.target.value)} placeholder="House / street, landmark" required />
+          <label style={styles.fieldLabel}>City</label>
+          <input style={styles.fieldInput} value={city} onChange={(event) => setCity(event.target.value)} placeholder="Enter city" required />
+          <label style={styles.fieldLabel}>Date</label>
+          <input type="date" style={styles.fieldInput} value={scheduledDate} min={todayIsoDate()} onChange={(event) => setScheduledDate(event.target.value)} />
+          <label style={styles.fieldLabel}>Time</label>
+          <input type="time" style={styles.fieldInput} value={scheduledTime} onChange={(event) => setScheduledTime(event.target.value)} />
+          <label style={styles.fieldLabel}>Shift duration</label>
+          <div style={styles.chipRow}>
+            {STAFFING_DURATIONS.map((hours) => (
+              <button
+                key={hours}
+                type="button"
+                onClick={() => setDurationHours(hours)}
+                style={{ ...styles.filterChip, ...(durationHours === hours ? styles.filterChipActive : {}) }}
+              >
+                {hours} Hours
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Patient Details</h2>
+        </div>
+        <div style={styles.formStack}>
+          <label style={styles.fieldLabel}>Patient condition / care requirement</label>
+          <textarea
+            style={styles.textArea}
+            value={patientCondition}
+            onChange={(event) => setPatientCondition(event.target.value)}
+            placeholder="Mobility support, post-surgery recovery, elder care, or any medical assistance needed"
+          />
+          <label style={styles.fieldLabel}>Special instructions (optional)</label>
+          <textarea
+            style={styles.textArea}
+            value={specialInstructions}
+            onChange={(event) => setSpecialInstructions(event.target.value)}
+            placeholder="Timing preference, floor access, language preference, or any other note"
+          />
+        </div>
+      </section>
+
+      <section style={styles.checkoutBar}>
+        <div>
+          <strong style={styles.checkoutTitle}>{staffSummary || "Select care staff to continue"}</strong>
+          <span style={styles.checkoutMeta}>Pricing is confirmed by our dispatch team after review</span>
+        </div>
+        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+          {submitting ? "Submitting..." : "Submit Request"}
+        </button>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+function staffingStatusTone(status: string): "upcoming" | "completed" | "cancelled" {
+  const normalized = status.toLowerCase();
+  if (["completed"].includes(normalized)) return "completed";
+  if (["rejected", "cancelled"].includes(normalized)) return "cancelled";
+  return "upcoming";
+}
+
+function StaffingBookingsInner() {
+  const searchParams = useSearchParams();
+  const justRequested = searchParams.get("requested") === "1";
+  const { user } = useCustomerUser();
+  const [bookings, setBookings] = useState<StaffingBookingSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+
+    function load() {
+      fetchPatientStaffingBookings(user!.id)
+        .then((items) => {
+          if (active) setBookings(items);
+        })
+        .catch(() => {
+          if (active) setBookings([]);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }
+
+    load();
+    const unsubscribe = subscribeToPatientStaffingBookings(user.id, load);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user]);
+
+  return (
+    <DashboardFrame title="Care Staff Requests" subtitle="Track the status of your home-care and staffing requests, from submission to assignment.">
+      {justRequested ? (
+        <div style={styles.noticeCard}>
+          Your request has been sent to our dispatch team. We will confirm the assigned professional and pricing shortly — you will see live updates here.
+        </div>
+      ) : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading your requests...</div> : null}
+
+      {!loading && !bookings.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No care staff requests yet</h2>
+          <p style={styles.emptyCopy}>Request a nurse, caregiver, or home-care professional whenever your patient needs support.</p>
+          <Link href="/care-staff/request" style={styles.primaryActionLink}>Request Care Staff</Link>
+        </section>
+      ) : (
+        <div style={styles.appointmentGrid}>
+          {bookings.map((booking) => (
+            <div key={booking.id} style={styles.appointmentCard}>
+              <strong>{booking.staffType}</strong>
+              <span>{booking.numberOfStaff} staff member{booking.numberOfStaff > 1 ? "s" : ""}</span>
+              <small>{booking.city} · {formatDateTimeLabel(booking.scheduledDate, booking.scheduledTime)}</small>
+              <p>{booking.durationHours} hour shift{booking.staffName ? ` · Assigned: ${booking.staffName}` : " · Awaiting assignment"}</p>
+              <div style={styles.doctorFooter}>
+                <span style={staffingStatusTone(booking.status) === "completed" ? styles.greenText : staffingStatusTone(booking.status) === "cancelled" ? styles.danger : undefined}>
+                  {booking.status}
+                </span>
+                <strong>{booking.totalAmount ? formatMoney(booking.totalAmount) : "Pricing pending"}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </DashboardFrame>
+  );
+}
+
+export function WebStaffingBookingsScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading your requests...</div></div>}>
+      <StaffingBookingsInner />
+    </Suspense>
+  );
+}
+
 export function WebAmbulanceScreen() {
   return (
-    <DashboardFrame title="Ambulance" subtitle="Request emergency transport and review the same emergency-response journey in a web-optimized layout.">
+    <DashboardFrame title="Ambulance" subtitle="Request emergency transport and get connected with a nearby ambulance quickly.">
       <div style={styles.twoColumnGrid}>
         <section style={styles.heroPanel}>
           <div style={styles.heroTag}>24×7 Emergency</div>
           <h2 style={styles.heroHeading}>Emergency transport with quicker action steps.</h2>
-          <p style={styles.heroCopy}>Use this web entry point for ambulance help, emergency guidance, and hospital escalation when you need rapid support.</p>
+          <p style={styles.heroCopy}>Request emergency transport, share pickup and drop details, and get connected with a nearby ambulance.</p>
           <div style={styles.heroActionRow}>
             <a href="tel:01244567890" style={styles.primaryActionLink}>Call 0124 456 7890</a>
             <Link href="/support" style={styles.secondaryActionLink}>Emergency support ticket</Link>
@@ -1746,7 +2131,7 @@ export function WebAmbulanceScreen() {
           <div style={styles.stackList}>
             {[
               ["Request Created", "Share pickup location, patient context, and destination hospital."],
-              ["Vehicle Assigned", "The same workflow can show dispatch status and estimated arrival."],
+              ["Vehicle Assigned", "We'll share driver and vehicle details as soon as one is assigned."],
               ["Trip Completed", "Review bill summary, care handoff, and history in one place."],
             ].map(([title, copy]) => (
               <div key={title} style={styles.stepCard}>
@@ -1799,7 +2184,7 @@ export function WebSubscriptionPlansScreen() {
   const { requireAuth } = useAuthActionGuard();
 
   return (
-    <DashboardFrame title="Subscription Plans" subtitle="Explore bundled health-card style plans and member benefits in the same service family as the app.">
+    <DashboardFrame title="Subscription Plans" subtitle="Compare membership plans and choose the coverage that fits your family's needs.">
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Membership Plans</h2>
@@ -1889,7 +2274,7 @@ export function WebSupportScreen() {
   }
 
   return (
-    <DashboardFrame title="Support" subtitle="Raise tickets, track responses, and review common issue paths from the same shared support system.">
+    <DashboardFrame title="Support" subtitle="Raise a ticket, track responses, and get help from our care team.">
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Support Topics</h2>
@@ -1906,7 +2291,7 @@ export function WebSupportScreen() {
       {!configured ? <div style={styles.noticeCard}>Supabase env is missing for support access.</div> : null}
       {configured && authState.loading ? <div style={styles.noticeCard}>Checking your customer session...</div> : null}
       {configured && !authState.loading && !user ? (
-        <div style={styles.noticeCard}>Login with the same customer account to raise and review support tickets.</div>
+        <div style={styles.noticeCard}>Log in to raise a support ticket and track responses from our care team.</div>
       ) : null}
 
       {configured && user ? (
@@ -2026,7 +2411,7 @@ export function WebPharmacyCartScreen() {
   }
 
   return (
-    <DashboardFrame title="Cart" subtitle={`${cart.itemCount} items ready for checkout with the same Razorpay handoff used by the mobile app.`}>
+    <DashboardFrame title="Cart" subtitle={`${cart.itemCount} items ready for secure checkout.`}>
       <div style={styles.cartLayout}>
         <section style={styles.sectionBlock}>
           <div style={styles.noticeCard}>You unlocked free delivery on this order.</div>
@@ -2095,7 +2480,7 @@ export function WebPharmacyOrdersScreen() {
   }, [user]);
 
   return (
-    <DashboardFrame title="My Pharmacy Orders" subtitle="Orders placed from checkout appear here instantly, matching the app’s pharmacy order flow.">
+    <DashboardFrame title="My Pharmacy Orders" subtitle="Track your medicine orders from confirmation to delivery.">
       {!orders.length ? (
         <section style={styles.emptyPanel}>
           <h2 style={styles.emptyTitle}>No pharmacy orders yet</h2>
@@ -2429,199 +2814,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textAlign: "center",
   },
-  shell: {
-    minHeight: "100vh",
-    display: "grid",
-    gridTemplateColumns: "236px minmax(0, 1fr)",
-    background: themeStyles.panelAlt,
-  },
-  sidebar: {
-    padding: "20px 14px",
-    borderRight: `1px solid ${themeStyles.line}`,
-    background: themeStyles.panel,
-    display: "grid",
-    alignContent: "start",
-    gap: 6,
-    position: "sticky",
-    top: 0,
-    height: "100vh",
-    overflowY: "auto",
-  },
-  brandWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "4px 8px 18px",
-  },
-  brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    background: themeStyles.brandGradient,
-    color: "var(--surface-strong)",
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 900,
-    fontSize: "0.95rem",
-  },
-  brandTitle: {
-    display: "block",
-    color: themeStyles.brandDeep,
-    fontSize: "0.95rem",
-  },
-  brandSub: {
-    color: themeStyles.muted,
-    fontSize: "0.76rem",
-  },
-  navGroupLabel: {
-    fontSize: "0.68rem",
-    fontWeight: 800,
-    textTransform: "uppercase",
-    letterSpacing: "0.1em",
-    color: themeStyles.muted,
-    padding: "6px 10px 4px",
-  },
-  navList: {
-    display: "grid",
-    gap: 2,
-  },
-  navItem: {
-    position: "relative",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "9px 10px",
-    borderRadius: 8,
-    border: "1px solid transparent",
-    color: themeStyles.inkSoft,
-    fontSize: "0.88rem",
-  },
-  navItemActive: {
-    background: themeStyles.brandTint,
-    borderColor: themeStyles.lineStrong,
-    color: themeStyles.brandDeep,
-    fontWeight: 700,
-  },
-  navItemIcon: {
-    flexShrink: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    display: "grid",
-    placeItems: "center",
-    fontSize: "0.72rem",
-    fontWeight: 800,
-    background: themeStyles.panelAlt,
-    color: themeStyles.muted,
-  },
-  navItemIconActive: {
-    background: themeStyles.brand,
-    color: "var(--surface-strong)",
-  },
-  navItemLabel: {
-    color: "inherit",
-    flex: 1,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  navItemDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    background: themeStyles.brand,
-  },
-  sidebarPromo: {
-    marginTop: 16,
-    borderRadius: 12,
-    padding: 14,
-    color: "var(--surface-strong)",
-    background: themeStyles.promoGradient,
-    display: "grid",
-    gap: 10,
-  },
-  sidebarPromoTag: {
-    fontSize: "0.68rem",
-    textTransform: "uppercase",
-    letterSpacing: "0.14em",
-    opacity: 0.84,
-    fontWeight: 800,
-  },
-  sidebarPromoTitle: {
-    margin: 0,
-    fontSize: "1.02rem",
-    lineHeight: 1.25,
-  },
-  sidebarPromoCopy: {
-    margin: 0,
-    color: "rgba(255,255,255,0.82)",
-    lineHeight: 1.5,
-    fontSize: "0.82rem",
-  },
-  sidebarPromoButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "fit-content",
-    minHeight: 34,
-    padding: "0 12px",
-    borderRadius: 8,
-    background: themeStyles.panel,
-    color: themeStyles.brandDeep,
-    fontWeight: 800,
-    fontSize: "0.82rem",
-  },
   mainArea: {
     minWidth: 0,
-    display: "grid",
-    gridTemplateRows: "56px minmax(0, 1fr)",
-    height: "100vh",
-  },
-  topNav: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    padding: "0 24px",
-    borderBottom: `1px solid ${themeStyles.line}`,
-    background: themeStyles.panel,
-    position: "sticky",
-    top: 0,
-    zIndex: 3,
-  },
-  topNavSearch: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    minHeight: 36,
-    padding: "0 12px",
-    borderRadius: 8,
-    border: `1px solid ${themeStyles.line}`,
-    background: themeStyles.panelAlt,
-    color: themeStyles.muted,
-    flex: "0 1 380px",
-  },
-  topNavSearchIcon: {
-    fontSize: "0.9rem",
-  },
-  topNavSearchText: {
-    fontSize: "0.84rem",
-  },
-  topNavRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    border: `1px solid ${themeStyles.line}`,
-    background: themeStyles.panel,
-    display: "grid",
-    placeItems: "center",
-    cursor: "pointer",
-    fontSize: "0.9rem",
   },
   mainScroll: {
     overflowY: "auto",
@@ -2640,14 +2834,6 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 18,
     flexWrap: "wrap",
   },
-  pageEyebrow: {
-    color: themeStyles.brand,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: "0.1em",
-    fontSize: "0.7rem",
-    marginBottom: 6,
-  },
   pageTitle: {
     margin: 0,
     color: themeStyles.brandDeep,
@@ -2662,38 +2848,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: themeStyles.inkSoft,
     lineHeight: 1.55,
     fontSize: "0.92rem",
-  },
-  topbarRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 14,
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-  },
-  topbarAccount: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  accountAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 999,
-    background: themeStyles.brandTint,
-    color: themeStyles.brand,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 800,
-    fontSize: "0.82rem",
-  },
-  accountMeta: {
-    display: "grid",
-    gap: 0,
-    textAlign: "left",
-    color: themeStyles.brandDeep,
-    fontSize: "0.82rem",
-    lineHeight: 1.3,
   },
   mainContent: {
     display: "grid",

@@ -71,6 +71,12 @@ Suggested `home-landing` JSON content:
 
 For public browsing, run the updated SQL in [sql/public-browse-policies.sql](/Users/primedepthlabs/PDL/Project_Under_30K/Saiman-healthcare/saiman-health-customer-panel/sql/public-browse-policies.sql:1) so `anon` can read published CMS content.
 
+## App shell & design tokens
+
+- `components/site-header.tsx` and `components/site-footer.tsx` are the single shared header/footer used by every route (public and authenticated) — there is no per-route sidebar. `DashboardFrame` (inside `components/web-app-experience.tsx`) and `CustomerSiteShell` (`components/customer-site-shell.tsx`) both render `<SiteHeader />` and nothing else shell-related.
+- Design tokens (colors, typography scale, spacing, radius, shadows, containers, motion) live in `app/globals.css` under `:root`. Change brand colors there, not in individual components — every screen consumes these variables.
+- See `APP_PROCESS_LOG.md`'s "Design System" section for what was and wasn't migrated to the new shell/token system.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

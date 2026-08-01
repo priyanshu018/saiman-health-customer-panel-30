@@ -251,7 +251,7 @@ export function CustomerLandingPage() {
         <div className="site-section-head">
           <div>
             <p className="site-section-eyebrow">Blogs</p>
-            <h2>Latest content managed by super admin.</h2>
+            <h2>Health tips and updates from our care team.</h2>
           </div>
           <Link href="/blogs" className="pill-link">
             View all blogs

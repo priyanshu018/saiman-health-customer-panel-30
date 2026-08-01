@@ -9,7 +9,8 @@
       "Bash(pkill -f \"next start\")",
       "Bash(pkill -f \"PORT=3411\")",
       "Bash(lsof -ti:3411)",
-      "Bash(xargs -r kill)"
+      "Bash(xargs -r kill)",
+      "Bash(grep -n \"^\\\\.customer-main-site\\\\|^\\\\.site-header\\\\|^\\\\.site-header-bar\\\\|^\\\\.site-brand,\\\\|^\\\\.site-brand strong\\\\|^\\\\.site-brand small\\\\|^\\\\.site-brand-mark\\\\|^\\\\.site-header-nav\\\\|^\\\\.site-header-nav a\\\\|^\\\\.site-header-actions\\\\|^\\\\.site-portal-cta\\\\|^\\\\.landing-hero,\\\\|^\\\\.landing-hero {\" \"/Users/primedepthlabs/PDL/Project_Under_30K/Saiman-healthcare/saiman-health-customer-panel/app/globals.css\")"
     ]
   }
 }

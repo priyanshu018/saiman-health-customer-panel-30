@@ -17,6 +17,7 @@ export type DoctorSummary = {
   experience: number;
   fee: number;
   rating: number;
+  reviewCount: number;
   availability: string[];
 };
 
@@ -162,6 +163,8 @@ export type InstantCallSummary = {
   status: string;
   statusMessage: string | null;
   preferredLanguage: string | null;
+  doctorId: string | null;
+  doctorName: string | null;
   createdAt: string;
 };
 
@@ -323,6 +326,38 @@ export async function logoutCustomer() {
   if (error) throw new Error(error.message);
 }
 
+async function fetchDoctorRatings(doctorIds: string[]) {
+  const ratings = new Map<string, { averageRating: number; totalReviews: number }>();
+  const uniqueIds = Array.from(new Set(doctorIds.filter(Boolean)));
+  if (!uniqueIds.length) return ratings;
+
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("doctor_reviews")
+    .select("doctor_id,rating")
+    .in("doctor_id", uniqueIds)
+    .eq("moderation_status", "visible");
+
+  if (error) return ratings;
+
+  const grouped = new Map<string, number[]>();
+  for (const row of data || []) {
+    const list = grouped.get(row.doctor_id) || [];
+    list.push(numberValue(row.rating));
+    grouped.set(row.doctor_id, list);
+  }
+
+  grouped.forEach((values, doctorId) => {
+    const total = values.reduce((sum, value) => sum + value, 0);
+    ratings.set(doctorId, {
+      averageRating: Number((total / values.length).toFixed(1)),
+      totalReviews: values.length,
+    });
+  });
+
+  return ratings;
+}
+
 export async function fetchApprovedDoctors() {
   const supabase = client();
   const { data, error } = await supabase
@@ -335,18 +370,25 @@ export async function fetchApprovedDoctors() {
     .order("name", { ascending: true });
 
   if (error) throw new Error(error.message);
-  return (data || []).map((row) => ({
-    id: row.id,
-    name: text(row.name, "Doctor"),
-    avatarUrl: text(row.avatar_url) || null,
-    specialty: text(row.specialization, "General Physician"),
-    hospital: text(row.hospital, "Online consultation"),
-    city: text(row.city, "City pending"),
-    experience: numberValue(row.experience),
-    fee: numberValue(row.fee, 500),
-    rating: 4.8,
-    availability: formatAvailability(row as Record<string, unknown>),
-  })) satisfies DoctorSummary[];
+  const rows = data || [];
+  const ratings = await fetchDoctorRatings(rows.map((row) => row.id));
+
+  return rows.map((row) => {
+    const rating = ratings.get(row.id);
+    return {
+      id: row.id,
+      name: text(row.name, "Doctor"),
+      avatarUrl: text(row.avatar_url) || null,
+      specialty: text(row.specialization, "General Physician"),
+      hospital: text(row.hospital, "Online consultation"),
+      city: text(row.city, "Location not specified"),
+      experience: numberValue(row.experience),
+      fee: numberValue(row.fee, 500),
+      rating: rating?.averageRating || 0,
+      reviewCount: rating?.totalReviews || 0,
+      availability: formatAvailability(row as Record<string, unknown>),
+    };
+  }) satisfies DoctorSummary[];
 }
 
 export async function fetchApprovedPharmacies() {
@@ -362,7 +404,7 @@ export async function fetchApprovedPharmacies() {
   return (data || []).map((row) => ({
     id: row.id,
     name: text(row.shop_name, text(row.name, "Pharmacy")),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     address: text(row.shop_address, "Address available after order"),
     eta: "30-40 mins",
     rating: 4.7,
@@ -422,7 +464,7 @@ export async function fetchApprovedPharmacyProducts() {
     stock: numberValue(row.stock, 0),
     pharmacyId: row.pharmacy_id || null,
     pharmacyName: text(row.pharmacy_name, "Saiman Pharmacy"),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     imageUrl:
       text(row.image_url) ||
       toStringArray((row as { image_urls?: unknown }).image_urls)[0] ||
@@ -475,7 +517,7 @@ export async function fetchApprovedLabTests() {
             name: text(test.name, "Lab Test"),
             category: text(test.category, "General"),
             labName: text(lab.lab_name, "Approved Lab"),
-            city: text(lab.city, "City pending"),
+            city: text(lab.city, "Location not specified"),
             price: numberValue(row.price, 0),
             reportTime: text(test.report_delivery_text, "24-48 hrs"),
             imageUrl: text((test as { image_url?: unknown }).image_url) || null,
@@ -501,7 +543,7 @@ export async function fetchApprovedLabTests() {
     name: text(row.test_name, "Lab Test"),
     category: text(row.category, "General"),
     labName: text(row.lab_name, "Approved Lab"),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     price: numberValue(row.price, 0),
     reportTime: text(row.report_time, "24-48 hrs"),
     imageUrl: text((row as { image_url?: unknown }).image_url) || null,
@@ -522,7 +564,7 @@ export async function fetchApprovedHospitals() {
     id: row.id,
     name: text(row.hospital_name, text(row.name, "Hospital")),
     address: text(row.hospital_address, "Address available after consultation"),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     totalBeds: row.total_beds == null ? null : numberValue(row.total_beds),
   })) satisfies HospitalSummary[];
 }
@@ -578,7 +620,7 @@ export async function fetchApprovedHospitalServices() {
         providerId: row.provider_id,
         providerName: text(provider.hospital_name, text(provider.name, "Hospital")),
         providerAddress: text(provider.hospital_address, "Address available after booking"),
-        providerCity: text(provider.city, "City pending"),
+        providerCity: text(provider.city, "Location not specified"),
         serviceName: text(service.name, "Hospital Service"),
         category: text(service.category, "General"),
         description: text(service.description),
@@ -633,7 +675,7 @@ export async function fetchApprovedCtmriServices() {
         providerId: row.provider_id,
         providerName: text(provider.center_name, text(provider.name, "Imaging Center")),
         providerAddress: text(provider.center_address, "Address available after booking"),
-        providerCity: text(provider.city, "City pending"),
+        providerCity: text(provider.city, "Location not specified"),
         serviceName: text(service.name, "Imaging Service"),
         category: text(service.category, "General"),
         description: text(service.description),
@@ -666,7 +708,7 @@ export async function fetchApprovedRentalEquipment() {
     monthlyPrice: numberValue(row.monthly_price, numberValue(row.price, 0) * 30),
     deposit: numberValue(row.deposit, 0),
     providerName: text(row.owner, "Verified Provider"),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     stock: numberValue(row.stock, 0),
     imageUrl: text(row.image_url) || null,
   })) satisfies RentalEquipmentSummary[];
@@ -685,13 +727,150 @@ export async function fetchApprovedStaffingProviders() {
   return (data || []).map((row) => ({
     id: row.id,
     name: text(row.name, "Verified Staff"),
-    city: text(row.city, "City pending"),
+    city: text(row.city, "Location not specified"),
     profession: text(row.provider_subtype, "Care Staff"),
     experience: row.experience == null ? null : numberValue(row.experience),
     fee: row.fee == null ? null : numberValue(row.fee),
     qualifications: text(row.qualifications),
     avatarUrl: text(row.avatar_url) || null,
   })) satisfies StaffingProviderSummary[];
+}
+
+export const STAFF_TYPES = ["Nurse", "Physiotherapist", "Caregiver", "Doctor", "Home Assistant", "Lab Technician"] as const;
+export const STAFFING_DURATIONS = [4, 8, 12, 24] as const;
+
+export type StaffingBookingSummary = {
+  id: string;
+  staffType: string;
+  numberOfStaff: number;
+  status: string;
+  paymentStatus: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationHours: number;
+  fullAddress: string;
+  city: string;
+  patientCondition: string;
+  specialInstructions: string;
+  totalAmount: number;
+  staffName: string | null;
+  staffPhone: string | null;
+  createdAt: string;
+};
+
+function mapStaffingBookingRow(row: Record<string, unknown>): StaffingBookingSummary {
+  const staff = relationRow(row.staff as Record<string, unknown> | Record<string, unknown>[] | null);
+  return {
+    id: String(row.id),
+    staffType: text(row.staff_type, "Healthcare Staff"),
+    numberOfStaff: numberValue(row.number_of_staff, 1),
+    status: text(row.status, "Pending"),
+    paymentStatus: text(row.payment_status, "pending"),
+    scheduledDate: text(row.scheduled_date),
+    scheduledTime: text(row.scheduled_time),
+    durationHours: numberValue(row.duration_hours, 0),
+    fullAddress: text(row.full_address),
+    city: text(row.city, "Location not specified"),
+    patientCondition: text(row.patient_condition, "General care requirement"),
+    specialInstructions: text(row.special_instructions),
+    totalAmount: numberValue(row.total_amount, 0),
+    staffName: staff ? text((staff as Record<string, unknown>).name) || null : null,
+    staffPhone: staff ? text((staff as Record<string, unknown>).phone) || null : null,
+    createdAt: text(row.created_at),
+  };
+}
+
+const STAFFING_BOOKING_SELECT =
+  "id,staff_type,number_of_staff,status,payment_status,scheduled_date,scheduled_time,duration_hours,full_address,city,patient_condition,special_instructions,total_amount,created_at,staff:users!staffing_bookings_staff_id_fkey(name,phone)";
+
+// Staffing requests are request-first: the admin dispatch team assigns a
+// provider and confirms pricing after submission (see StaffingDispatchScreen
+// in the admin panel). customer_transactions.service_type has no
+// "staffing_booking" entry and admin's own read path defaults payment_status
+// to "pending" — so this intentionally does NOT mark the booking "paid" the
+// way the mobile app's created-with-zero-amount request does.
+export async function createStaffingBooking(params: {
+  patientId: string;
+  staffType: string;
+  numberOfStaff: number;
+  bookingItems: Array<{ staffType: string; quantity: number }>;
+  patientCondition: string;
+  fullAddress: string;
+  city: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationHours: number;
+  specialInstructions: string;
+}) {
+  const supabase = client();
+  const { data: booking, error } = await supabase
+    .from("staffing_bookings")
+    .insert({
+      patient_id: params.patientId,
+      staff_id: null,
+      staff_type: params.staffType,
+      number_of_staff: Math.max(1, params.numberOfStaff),
+      patient_condition: params.patientCondition.trim() || null,
+      full_address: params.fullAddress.trim(),
+      city: params.city.trim() || null,
+      scheduled_date: params.scheduledDate,
+      scheduled_time: params.scheduledTime,
+      duration_hours: Math.max(1, params.durationHours),
+      special_instructions: params.specialInstructions.trim() || null,
+      estimated_price: 0,
+      commission_amount: 0,
+      total_amount: 0,
+      payment_method: null,
+      payment_status: "pending",
+      status: "Pending",
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const items = params.bookingItems
+    .filter((item) => item.staffType && item.quantity > 0)
+    .map((item) => ({
+      booking_id: booking.id,
+      staff_type: item.staffType,
+      quantity: Math.max(1, Math.round(item.quantity)),
+    }));
+
+  if (items.length) {
+    const { error: itemsError } = await supabase.from("staffing_booking_items").insert(items);
+    if (itemsError) throw new Error(itemsError.message);
+  }
+
+  return booking as { id: string };
+}
+
+export async function fetchPatientStaffingBookings(patientId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("staffing_bookings")
+    .select(STAFFING_BOOKING_SELECT)
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => mapStaffingBookingRow(row as Record<string, unknown>)) satisfies StaffingBookingSummary[];
+}
+
+export function subscribeToPatientStaffingBookings(patientId: string, onChange: () => void) {
+  const supabase = client();
+  const channel = supabase
+    .channel(`staffing-bookings-${patientId}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "staffing_bookings", filter: `patient_id=eq.${patientId}` },
+      () => onChange(),
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function fetchPatientAppointments(patientId: string) {
@@ -940,11 +1119,31 @@ export async function createSupportTicket(params: {
   if (messageError) throw new Error(messageError.message);
 }
 
+export const INSTANT_CALL_TERMINAL_STATUSES = ["completed", "cancelled", "rejected", "no_doctor_available"];
+
+const INSTANT_CALL_SELECT =
+  "id,specialty,call_reason,status,status_message,preferred_language,doctor_id,created_at,doctor:users!instant_call_requests_doctor_id_fkey(name)";
+
+function mapInstantCallRow(row: Record<string, unknown>): InstantCallSummary {
+  const doctor = relationRow(row.doctor as Record<string, unknown> | Record<string, unknown>[] | null);
+  return {
+    id: String(row.id),
+    specialty: text(row.specialty),
+    callReason: text(row.call_reason),
+    status: text(row.status),
+    statusMessage: (row.status_message as string | null) ?? null,
+    preferredLanguage: (row.preferred_language as string | null) ?? null,
+    doctorId: (row.doctor_id as string | null) ?? null,
+    doctorName: doctor ? text((doctor as Record<string, unknown>).name) || null : null,
+    createdAt: text(row.created_at),
+  };
+}
+
 export async function fetchActiveInstantCallRequest(userId: string) {
   const supabase = client();
   const { data, error } = await supabase
     .from("instant_call_requests")
-    .select("id,specialty,call_reason,status,status_message,preferred_language,created_at")
+    .select(INSTANT_CALL_SELECT)
     .eq("patient_id", userId)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -952,19 +1151,22 @@ export async function fetchActiveInstantCallRequest(userId: string) {
   if (error) throw new Error(error.message);
   const row = data?.[0];
   if (!row) return null;
-  if (["completed", "cancelled", "rejected", "no_doctor_available"].includes(text(row.status))) {
-    return null;
-  }
+  if (INSTANT_CALL_TERMINAL_STATUSES.includes(text(row.status))) return null;
 
-  return {
-    id: row.id,
-    specialty: text(row.specialty),
-    callReason: text(row.call_reason),
-    status: text(row.status),
-    statusMessage: row.status_message ?? null,
-    preferredLanguage: row.preferred_language ?? null,
-    createdAt: text(row.created_at),
-  } satisfies InstantCallSummary;
+  return mapInstantCallRow(row as Record<string, unknown>);
+}
+
+export async function fetchInstantCallHistory(userId: string, limit = 6) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("instant_call_requests")
+    .select(INSTANT_CALL_SELECT)
+    .eq("patient_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => mapInstantCallRow(row as Record<string, unknown>)) satisfies InstantCallSummary[];
 }
 
 export async function requestInstantCall(params: {
@@ -986,4 +1188,38 @@ export async function requestInstantCall(params: {
 
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function markInstantCallConnecting(requestId: string, mode: "voice" | "video" = "voice") {
+  const supabase = client();
+  const { error } = await supabase.rpc("mark_instant_call_connecting", { p_request_id: requestId, p_mode: mode });
+  if (error) throw new Error(error.message);
+}
+
+export async function markInstantCallInProgress(requestId: string) {
+  const supabase = client();
+  const { error } = await supabase.rpc("mark_instant_call_in_progress", { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+export async function cancelInstantCallRequest(requestId: string, reason?: string) {
+  const supabase = client();
+  const { error } = await supabase.rpc("cancel_instant_call", { p_request_id: requestId, p_reason: reason?.trim() || null });
+  if (error) throw new Error(error.message);
+}
+
+export function subscribeToInstantCallRequest(patientId: string, onChange: () => void) {
+  const supabase = client();
+  const channel = supabase
+    .channel(`instant-call-request-${patientId}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "instant_call_requests", filter: `patient_id=eq.${patientId}` },
+      () => onChange(),
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
