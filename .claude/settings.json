@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -X POST http://localhost:3411/api/payments/create-order -H \"Content-Type: application/json\" -d '{\"serviceType\":\"doctor_consultation\",\"serviceLabel\":\"Test\",\"description\":\"Test\",\"amount\":100,\"redirectUri\":\"http://localhost:3411/payment-callback\"}')",
+      "Bash(pkill -f \"next start\")",
+      "Bash(pkill -f \"PORT=3411\")",
+      "Bash(lsof -ti:3411)",
+      "Bash(xargs -r kill)"
+    ]
+  }
+}

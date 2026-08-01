@@ -7,6 +7,8 @@ import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { CustomerShellAuthActions, useCustomerUser } from "@/components/customer-live";
 import { primaryNav, recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
 import {
+  createDoctorAppointment,
+  createPharmacyOrder,
   createSupportTicket,
   fetchActiveInstantCallRequest,
   fetchApprovedCtmriServices,
@@ -18,6 +20,7 @@ import {
   fetchApprovedStaffingProviders,
   fetchCustomerProfile,
   fetchPatientAppointments,
+  fetchPatientPharmacyOrders,
   fetchSupportTickets,
   loginCustomer,
   requestInstantCall,
@@ -28,29 +31,26 @@ import {
   type DoctorSummary,
   type HospitalServiceSummary,
   type LabTestSummary,
+  type PharmacyOrderSummary,
   type PharmacyProductSummary,
   type RentalEquipmentSummary,
   type StaffingProviderSummary,
   type SupportTicketSummary,
 } from "@/lib/customer-web-live";
 import {
-  addLocalBooking,
-  addLocalOrder,
   addProductToCart,
   clearCart,
   decrementProduct,
   DEMO_PHARMACY_PRODUCTS,
   getCartLines,
   getCartSnapshot,
-  getLocalBookings,
-  getLocalOrders,
   mobileStoreKeys,
   registerPharmacyProducts,
   removeProduct,
   subscribeStore,
   type DemoPharmacyProduct,
 } from "@/lib/mobile-web-state";
-import { beginWebPayment, clearPendingPayment, getCallServerBase, getPendingPayment, verifyWebPayment } from "@/lib/web-payments";
+import { beginWebPayment, clearPendingPayment, getPendingPayment, linkTransactionToEntity, verifyWebPayment } from "@/lib/web-payments";
 
 function formatMoney(value: number) {
   return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -86,15 +86,8 @@ const EMPTY_CART_SNAPSHOT = {
   saved: 0,
 };
 
-const EMPTY_BOOKINGS: ReturnType<typeof getLocalBookings> = [];
-const EMPTY_ORDERS: ReturnType<typeof getLocalOrders> = [];
-
 let lastCartKey = "";
 let lastCartValue = EMPTY_CART_SNAPSHOT;
-let lastBookingsKey = "";
-let lastBookingsValue = EMPTY_BOOKINGS;
-let lastOrdersKey = "";
-let lastOrdersValue = EMPTY_ORDERS;
 
 function getStableCartSnapshot() {
   const key = JSON.stringify(getCartLines());
@@ -102,24 +95,6 @@ function getStableCartSnapshot() {
   lastCartKey = key;
   lastCartValue = getCartSnapshot();
   return lastCartValue;
-}
-
-function getStableBookingsSnapshot() {
-  const next = getLocalBookings();
-  const key = JSON.stringify(next);
-  if (key === lastBookingsKey) return lastBookingsValue;
-  lastBookingsKey = key;
-  lastBookingsValue = next;
-  return lastBookingsValue;
-}
-
-function getStableOrdersSnapshot() {
-  const next = getLocalOrders();
-  const key = JSON.stringify(next);
-  if (key === lastOrdersKey) return lastOrdersValue;
-  lastOrdersKey = key;
-  lastOrdersValue = next;
-  return lastOrdersValue;
 }
 
 function getInitials(name: string) {
@@ -375,22 +350,6 @@ function useCart() {
   );
 }
 
-function useBookings() {
-  return useSyncExternalStore(
-    (callback) => subscribeStore(mobileStoreKeys.bookings, callback),
-    () => getStableBookingsSnapshot(),
-    () => EMPTY_BOOKINGS,
-  );
-}
-
-function useOrders() {
-  return useSyncExternalStore(
-    (callback) => subscribeStore(mobileStoreKeys.orders, callback),
-    () => getStableOrdersSnapshot(),
-    () => EMPTY_ORDERS,
-  );
-}
-
 function WebAuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -642,8 +601,20 @@ function DashboardFrame({
 export function WebHomeScreen() {
   const { user } = useCustomerUser();
   const cart = useCart();
-  const bookings = useBookings();
-  const orders = useOrders();
+  const [upcomingAppointments, setUpcomingAppointments] = useState(0);
+  const [pharmacyOrders, setPharmacyOrders] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPatientAppointments(user.id)
+      .then((items: AppointmentSummary[]) =>
+        setUpcomingAppointments(items.filter((item) => !["completed", "cancelled"].includes(item.status.toLowerCase())).length),
+      )
+      .catch(() => setUpcomingAppointments(0));
+    fetchPatientPharmacyOrders(user.id)
+      .then((items) => setPharmacyOrders(items.length))
+      .catch(() => setPharmacyOrders(0));
+  }, [user]);
 
   const services = [
     { title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
@@ -658,9 +629,9 @@ export function WebHomeScreen() {
   ];
 
   const overviewStats = [
-    { label: "Upcoming appointments", value: String(bookings.filter((item) => item.status === "upcoming").length), href: "/appointments" },
+    { label: "Upcoming appointments", value: String(upcomingAppointments), href: "/appointments" },
     { label: "Cart items", value: String(cart.itemCount), href: "/pharmacy/cart" },
-    { label: "Pharmacy orders", value: String(orders.length), href: "/pharmacy/orders" },
+    { label: "Pharmacy orders", value: String(pharmacyOrders), href: "/pharmacy/orders" },
     { label: "Health card", value: "Active", href: "/health-card" },
   ];
 
@@ -865,12 +836,20 @@ export function WebDoctorsScreen() {
   );
 }
 
+const APPOINTMENT_TIME_SLOTS = ["09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"];
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
   const { requireAuth } = useAuthActionGuard();
   const [doctor, setDoctor] = useState<DoctorSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<"single" | "monthly" | "yearly">("single");
   const [submitting, setSubmitting] = useState(false);
+  const [appointmentDate, setAppointmentDate] = useState(todayIsoDate);
+  const [appointmentTime, setAppointmentTime] = useState(APPOINTMENT_TIME_SLOTS[0]);
 
   useEffect(() => {
     fetchApprovedDoctors()
@@ -882,10 +861,6 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
     if (!doctor) return;
     const user = requireAuth(`/doctors/${doctor.id}`);
     if (!user) return;
-    if (!getCallServerBase()) {
-      alert("NEXT_PUBLIC_CALL_SERVER_URL is missing for Razorpay checkout.");
-      return;
-    }
 
     const fee = selectedPlan === "monthly" ? doctor.fee * 3 : selectedPlan === "yearly" ? doctor.fee * 10 : doctor.fee;
     setSubmitting(true);
@@ -902,8 +877,8 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
           hospital: doctor.hospital,
           fee,
           consultationType: "clinic",
-          appointmentDate: "2026-07-26",
-          appointmentTime: "05:00 AM",
+          appointmentDate,
+          appointmentTime,
         },
         payment: {
           serviceType: "doctor_consultation",
@@ -999,12 +974,36 @@ export function WebDoctorDetailScreen({ doctorId }: { doctorId: string }) {
             </div>
           </section>
 
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Choose Date &amp; Time</h2>
+            </div>
+            <div style={styles.formStack}>
+              <label style={styles.fieldLabel}>Appointment date</label>
+              <input
+                type="date"
+                style={styles.fieldInput}
+                value={appointmentDate}
+                min={todayIsoDate()}
+                onChange={(event) => setAppointmentDate(event.target.value)}
+              />
+              <label style={styles.fieldLabel}>Appointment time</label>
+              <select style={styles.fieldInput} value={appointmentTime} onChange={(event) => setAppointmentTime(event.target.value)}>
+                {APPOINTMENT_TIME_SLOTS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+
           <section style={styles.checkoutBar}>
             <div>
               <strong style={styles.checkoutTitle}>
                 {selectedPlan === "single" ? "Single Consultation" : selectedPlan === "monthly" ? "Monthly Plan" : "Yearly Plan"}
               </strong>
-              <span style={styles.checkoutMeta}>{formatDateTimeLabel("2026-07-26", "05:00 AM")}</span>
+              <span style={styles.checkoutMeta}>{formatDateTimeLabel(appointmentDate, appointmentTime)}</span>
             </div>
             <button onClick={handleContinue} style={styles.primaryAction} disabled={submitting}>
               {submitting
@@ -1103,30 +1102,16 @@ export function WebAppointmentsScreen() {
   const { user } = useCustomerUser();
   const [liveAppointments, setLiveAppointments] = useState<AppointmentSummary[]>([]);
   const [tab, setTab] = useState<"upcoming" | "completed" | "cancelled">("upcoming");
-  const localBookings = useBookings();
 
   useEffect(() => {
     if (!user) return;
     fetchPatientAppointments(user.id).then(setLiveAppointments).catch(() => setLiveAppointments([]));
   }, [user]);
 
-  const merged = [
-    ...localBookings.map((booking) => ({
-      id: booking.id,
-      doctorName: booking.doctorName,
-      doctorSpecialty: booking.doctorSpecialty,
-      hospital: booking.hospital,
-      fee: booking.fee,
-      consultationType: booking.consultationType,
-      appointmentDate: booking.appointmentDate,
-      appointmentTime: booking.appointmentTime,
-      status: booking.status,
-    })),
-    ...liveAppointments.map((item) => ({
-      ...item,
-      status: ["completed", "cancelled"].includes(item.status.toLowerCase()) ? item.status.toLowerCase() : "upcoming",
-    })),
-  ];
+  const merged = liveAppointments.map((item) => ({
+    ...item,
+    status: ["completed", "cancelled"].includes(item.status.toLowerCase()) ? item.status.toLowerCase() : "upcoming",
+  }));
 
   const filtered = merged.filter((item) => item.status === tab);
 
@@ -1984,13 +1969,14 @@ export function WebPharmacyCartScreen() {
   const cart = useCart();
   const { requireAuth } = useAuthActionGuard();
   const [submitting, setSubmitting] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
 
   async function handleCheckout() {
     if (!cart.lines.length) return;
     const user = requireAuth("/pharmacy/cart");
     if (!user) return;
-    if (!getCallServerBase()) {
-      alert("NEXT_PUBLIC_CALL_SERVER_URL is missing for Razorpay checkout.");
+    if (!deliveryAddress.trim()) {
+      alert("Please add a delivery address before checkout.");
       return;
     }
     setSubmitting(true);
@@ -2001,9 +1987,13 @@ export function WebPharmacyCartScreen() {
         redirectUri: `${window.location.origin}/payment-callback`,
         order: {
           paymentMethod: "upi",
+          pharmacyId: cart.lines[0]?.product.pharmacyId || null,
+          subtotal: cart.total,
+          deliveryFee: 0,
           total: cart.total,
           itemCount: cart.itemCount,
           pharmacyName: "Saiman Pharmacy",
+          deliveryAddress: deliveryAddress.trim(),
           items: cart.lines.map((line) => ({
             productId: line.product.id,
             quantity: line.quantity,
@@ -2071,6 +2061,14 @@ export function WebPharmacyCartScreen() {
         </section>
 
         <aside style={styles.summaryPanel}>
+          <h2 style={styles.sectionTitle}>Delivery Address</h2>
+          <textarea
+            style={styles.textArea}
+            value={deliveryAddress}
+            onChange={(event) => setDeliveryAddress(event.target.value)}
+            placeholder="House / street, city, PIN code"
+            required
+          />
           <h2 style={styles.sectionTitle}>Price Details</h2>
           <div style={styles.summaryLine}><span>Total MRP</span><strong>{formatMoney(cart.mrp)}</strong></div>
           <div style={styles.summaryLine}><span>Discount on MRP</span><strong style={styles.greenText}>- {formatMoney(cart.saved)}</strong></div>
@@ -2086,7 +2084,15 @@ export function WebPharmacyCartScreen() {
 }
 
 export function WebPharmacyOrdersScreen() {
-  const orders = useOrders();
+  const { user } = useCustomerUser();
+  const [orders, setOrders] = useState<PharmacyOrderSummary[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPatientPharmacyOrders(user.id)
+      .then(setOrders)
+      .catch(() => setOrders([]));
+  }, [user]);
 
   return (
     <DashboardFrame title="My Pharmacy Orders" subtitle="Orders placed from checkout appear here instantly, matching the app’s pharmacy order flow.">
@@ -2115,20 +2121,52 @@ export function WebPharmacyOrdersScreen() {
 function PaymentCallbackInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, state: authState } = useCustomerUser();
   const [state, setState] = useState("Verifying payment...");
 
   useEffect(() => {
+    if (authState.loading) return;
     let active = true;
 
     const run = async () => {
       try {
-        const { pending } = await verifyWebPayment(searchParams);
+        const { pending, transaction } = await verifyWebPayment(searchParams);
         if (!active) return;
 
+        if (!user) {
+          throw new Error("Your session expired during checkout. Please sign in again to finish booking.");
+        }
+
         if (pending.kind === "doctor_booking") {
-          addLocalBooking({ ...pending.appointment });
+          const appointment = await createDoctorAppointment({
+            doctorId: pending.appointment.doctorId,
+            patientId: user.id,
+            date: pending.appointment.appointmentDate,
+            time: pending.appointment.appointmentTime,
+            consultationType: pending.appointment.consultationType,
+            fee: pending.appointment.fee,
+          });
+          await linkTransactionToEntity({
+            transactionId: transaction.transactionId,
+            entityId: appointment.id,
+            entityType: "doctor_appointment",
+          });
         } else if (pending.kind === "pharmacy_order") {
-          addLocalOrder({ ...pending.order });
+          const order = await createPharmacyOrder({
+            patientId: user.id,
+            pharmacyId: pending.order.pharmacyId,
+            paymentMethod: pending.order.paymentMethod,
+            subtotal: pending.order.subtotal,
+            deliveryFee: pending.order.deliveryFee,
+            total: pending.order.total,
+            deliveryAddress: pending.order.deliveryAddress,
+            items: pending.order.items,
+          });
+          await linkTransactionToEntity({
+            transactionId: transaction.transactionId,
+            entityId: order.id,
+            entityType: "pharmacy_order",
+          });
           clearCart();
         }
 
@@ -2144,7 +2182,7 @@ function PaymentCallbackInner() {
     return () => {
       active = false;
     };
-  }, [router, searchParams]);
+  }, [router, searchParams, user, authState.loading]);
 
   return (
     <div style={styles.authPage}>

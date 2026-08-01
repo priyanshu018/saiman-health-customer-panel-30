@@ -723,6 +723,132 @@ export async function fetchPatientAppointments(patientId: string) {
   }) satisfies AppointmentSummary[];
 }
 
+export async function createDoctorAppointment(params: {
+  doctorId: string;
+  patientId: string;
+  date: string;
+  time: string;
+  consultationType: string;
+  fee: number;
+}) {
+  const supabase = client();
+
+  const { data: activeAppointments, error: activeError } = await supabase
+    .from("doctor_appointments")
+    .select("id")
+    .eq("patient_id", params.patientId)
+    .not("status", "in", '("completed","cancelled")')
+    .limit(1);
+
+  if (activeError) throw new Error(activeError.message);
+  if (activeAppointments?.length) {
+    throw new Error("You already have an active doctor appointment. Please complete or cancel it before booking another.");
+  }
+
+  const { data, error } = await supabase
+    .from("doctor_appointments")
+    .insert({
+      doctor_id: params.doctorId,
+      patient_id: params.patientId,
+      appointment_date: params.date,
+      appointment_time: params.time,
+      consultation_type: params.consultationType,
+      status: "confirmed",
+      fee: params.fee,
+      payment_status: "paid",
+      chief_complaint: "Booked from customer web",
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (error.code === "23505" || error.message.includes("doctor_appointments_one_active_per_patient_idx")) {
+      throw new Error("You already have an active doctor appointment. Please complete or cancel it before booking another.");
+    }
+    throw new Error(error.message);
+  }
+  return data as { id: string };
+}
+
+export type PharmacyOrderSummary = {
+  id: string;
+  status: string;
+  paymentMethod: string;
+  total: number;
+  itemCount: number;
+  pharmacyName: string;
+  createdAt: string;
+};
+
+export async function createPharmacyOrder(params: {
+  patientId: string;
+  pharmacyId: string | null;
+  paymentMethod: "upi" | "card" | "cod";
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  deliveryAddress: string;
+  items: Array<{ productId: string; name: string; price: number; quantity: number }>;
+}) {
+  const supabase = client();
+
+  const { data: order, error } = await supabase
+    .from("pharmacy_orders")
+    .insert({
+      patient_id: params.patientId,
+      pharmacy_id: params.pharmacyId,
+      status: "placed",
+      payment_method: params.paymentMethod,
+      payment_status: params.paymentMethod === "cod" ? "pending" : "paid",
+      subtotal: params.subtotal,
+      delivery_fee: params.deliveryFee,
+      total: params.total,
+      delivery_address: params.deliveryAddress,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const orderItems = params.items.map((line) => ({
+    order_id: order.id,
+    product_id: line.productId,
+    product_name: line.name,
+    sku: line.productId,
+    quantity: line.quantity,
+    unit_price: line.price,
+    line_total: line.price * line.quantity,
+  }));
+
+  const { error: itemError } = await supabase.from("pharmacy_order_items").insert(orderItems);
+  if (itemError) throw new Error(itemError.message);
+
+  return order as { id: string };
+}
+
+export async function fetchPatientPharmacyOrders(patientId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("pharmacy_orders")
+    .select("id,status,payment_method,total,created_at,pharmacy:users!pharmacy_orders_pharmacy_id_fkey(name),items:pharmacy_order_items(id)")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => {
+    const pharmacy = relationRow(row.pharmacy);
+    return {
+      id: row.id,
+      status: text(row.status, "placed"),
+      paymentMethod: text(row.payment_method, "upi"),
+      total: numberValue(row.total, 0),
+      itemCount: Array.isArray(row.items) ? row.items.length : 0,
+      pharmacyName: text(pharmacy?.name, "Saiman Pharmacy"),
+      createdAt: text(row.created_at),
+    };
+  }) satisfies PharmacyOrderSummary[];
+}
+
 export async function fetchCustomerProfile(userId: string) {
   const supabase = client();
   const [{ data: profile, error: profileError }, { data: settings, error: settingsError }, { count: consultations, error: consultationsError }, { data: doctorsData, error: doctorsError }, { count: reports, error: reportsError }] =

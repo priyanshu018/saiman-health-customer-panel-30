@@ -1,0 +1,266 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+// Server-only: uses SUPABASE_SERVICE_ROLE_KEY and RAZORPAY_KEY_SECRET.
+// Only import this from Route Handlers (app/api/**), never from a "use client" file.
+
+export type TransactionServiceType =
+  | "doctor_consultation"
+  | "pharmacy_order"
+  | "lab_booking"
+  | "ambulance_booking"
+  | "rental_order"
+  | "hospital_booking"
+  | "ctmri_booking";
+
+export type CustomerTransactionRow = {
+  id: string;
+  patient_id: string | null;
+  provider_id: string | null;
+  provider_name: string | null;
+  service_type: TransactionServiceType;
+  service_label: string;
+  description: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  amount: number;
+  currency: string;
+  payment_method: string;
+  payment_gateway: string;
+  status: "created" | "pending" | "paid" | "failed" | "cancelled" | "refunded";
+  refund_status: "not_requested" | "pending" | "processed" | "failed";
+  refund_amount: number;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  razorpay_signature: string | null;
+  razorpay_refund_id: string | null;
+  receipt: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  failure_reason: string | null;
+  metadata: Record<string, unknown> | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type CreateOrderPayload = {
+  patientId: string;
+  providerId?: string | null;
+  providerName?: string | null;
+  serviceType: TransactionServiceType;
+  serviceLabel: string;
+  description: string;
+  amount: number;
+  paymentMethod: string;
+  customer?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+  metadata?: Record<string, unknown>;
+};
+
+type RazorpayOrderResponse = {
+  id: string;
+  entity: "order";
+  amount: number;
+  amount_paid: number;
+  amount_due: number;
+  currency: string;
+  receipt: string;
+  status: string;
+};
+
+function env(name: string) {
+  return String(process.env[name] || "").trim();
+}
+
+export function getRazorpayPublicKey() {
+  const key = env("RAZORPAY_KEY_ID");
+  if (!key) throw new Error("Missing RAZORPAY_KEY_ID.");
+  return key;
+}
+
+function getRazorpaySecretKey() {
+  const key = env("RAZORPAY_KEY_SECRET");
+  if (!key) throw new Error("Missing RAZORPAY_KEY_SECRET.");
+  return key;
+}
+
+function getSupabaseUrl() {
+  const url = env("NEXT_PUBLIC_SUPABASE_URL");
+  if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+  return url;
+}
+
+function getSupabaseAnonKey() {
+  const key = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  return key;
+}
+
+function getSupabaseServiceRoleKey() {
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  return key;
+}
+
+export function createSupabaseAdminClient() {
+  return createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function createSupabaseRequestClient(authHeader?: string | null) {
+  return createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
+  });
+}
+
+export async function getAuthenticatedUser(authHeader?: string | null) {
+  if (!authHeader) throw new Error("Missing Authorization header.");
+  const client = createSupabaseRequestClient(authHeader);
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) throw new Error(error?.message || "Unable to authenticate user.");
+  return data.user;
+}
+
+function makeReceipt(serviceType: TransactionServiceType) {
+  return `${serviceType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.slice(0, 40);
+}
+
+function toMinorUnits(amount: number) {
+  return Math.round(Number(amount || 0) * 100);
+}
+
+async function razorpayRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const auth = Buffer.from(`${getRazorpayPublicKey()}:${getRazorpaySecretKey()}`).toString("base64");
+  const response = await fetch(`https://api.razorpay.com/v1${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      String((json as { error?: { description?: string } })?.error?.description || `Razorpay request failed (${response.status}).`),
+    );
+  }
+
+  return json as T;
+}
+
+export async function createCustomerTransactionOrder(client: SupabaseClient, payload: CreateOrderPayload) {
+  const receipt = makeReceipt(payload.serviceType);
+  const order = await razorpayRequest<RazorpayOrderResponse>("/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      amount: toMinorUnits(payload.amount),
+      currency: "INR",
+      receipt,
+      notes: {
+        service_type: payload.serviceType,
+        service_label: payload.serviceLabel,
+      },
+    }),
+  });
+
+  const { data, error } = await client
+    .from("customer_transactions")
+    .insert({
+      patient_id: payload.patientId,
+      provider_id: payload.providerId || null,
+      provider_name: payload.providerName || null,
+      service_type: payload.serviceType,
+      service_label: payload.serviceLabel,
+      description: payload.description,
+      amount: Number(payload.amount || 0),
+      currency: "INR",
+      payment_method: payload.paymentMethod,
+      payment_gateway: "razorpay",
+      status: "pending",
+      refund_status: "not_requested",
+      razorpay_order_id: order.id,
+      receipt,
+      customer_name: payload.customer?.name || null,
+      customer_email: payload.customer?.email || null,
+      customer_phone: payload.customer?.phone || null,
+      metadata: payload.metadata || {},
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as CustomerTransactionRow;
+}
+
+export async function fetchCustomerTransaction(client: SupabaseClient, transactionId: string) {
+  const { data, error } = await client.from("customer_transactions").select("*").eq("id", transactionId).single();
+  if (error) throw new Error(error.message);
+  return data as CustomerTransactionRow;
+}
+
+export async function verifyCustomerTransaction(params: {
+  client: SupabaseClient;
+  transactionId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}) {
+  const transaction = await fetchCustomerTransaction(params.client, params.transactionId);
+  if (transaction.razorpay_order_id !== params.razorpayOrderId) {
+    throw new Error("Payment order mismatch.");
+  }
+
+  const crypto = await import("crypto");
+  const digest = crypto
+    .createHmac("sha256", getRazorpaySecretKey())
+    .update(`${params.razorpayOrderId}|${params.razorpayPaymentId}`)
+    .digest("hex");
+
+  if (digest !== params.razorpaySignature) {
+    throw new Error("Invalid payment signature.");
+  }
+
+  const { data, error } = await params.client
+    .from("customer_transactions")
+    .update({
+      status: "paid",
+      razorpay_payment_id: params.razorpayPaymentId,
+      razorpay_signature: params.razorpaySignature,
+      paid_at: new Date().toISOString(),
+      failure_reason: null,
+    })
+    .eq("id", params.transactionId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as CustomerTransactionRow;
+}
+
+export async function linkTransactionToEntity(params: {
+  client: SupabaseClient;
+  transactionId: string;
+  entityId: string;
+  entityType: string;
+}) {
+  const { data, error } = await params.client
+    .from("customer_transactions")
+    .update({
+      entity_id: params.entityId,
+      entity_type: params.entityType,
+    })
+    .eq("id", params.transactionId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as CustomerTransactionRow;
+}

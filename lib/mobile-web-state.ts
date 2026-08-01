@@ -21,40 +21,7 @@ export type PharmacyCartLine = {
   quantity: number;
 };
 
-export type LocalDoctorBooking = {
-  id: string;
-  doctorId: string;
-  doctorName: string;
-  doctorSpecialty: string;
-  hospital: string;
-  fee: number;
-  consultationType: string;
-  appointmentDate: string;
-  appointmentTime: string;
-  createdAt: string;
-  status: "upcoming" | "completed" | "cancelled";
-  paymentStatus: "paid" | "pending";
-};
-
-export type LocalPharmacyOrder = {
-  id: string;
-  createdAt: string;
-  status: "placed" | "accepted" | "packed" | "out_for_delivery" | "delivered" | "cancelled";
-  paymentMethod: string;
-  total: number;
-  itemCount: number;
-  pharmacyName: string;
-  items: Array<{
-    productId: string;
-    quantity: number;
-    price: number;
-    name: string;
-  }>;
-};
-
 const CART_KEY = "saiman-web-cart-v1";
-const BOOKINGS_KEY = "saiman-web-bookings-v1";
-const ORDERS_KEY = "saiman-web-orders-v1";
 const STORE_EVENT = "saiman-web-store-change";
 const dynamicProducts = new Map<string, DemoPharmacyProduct>();
 
@@ -132,13 +99,6 @@ function writeStore<T>(key: string, value: T) {
   if (!isBrowser()) return;
   window.localStorage.setItem(key, JSON.stringify(value));
   window.dispatchEvent(new CustomEvent(STORE_EVENT, { detail: key }));
-}
-
-function nextId(prefix: string) {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}`;
 }
 
 export function subscribeStore(key: string, callback: () => void) {
@@ -227,46 +187,6 @@ export function getCartSnapshot() {
   };
 }
 
-export function getLocalBookings() {
-  return readStore<LocalDoctorBooking[]>(BOOKINGS_KEY, []);
-}
-
-export function addLocalBooking(
-  booking: Omit<LocalDoctorBooking, "id" | "createdAt" | "status" | "paymentStatus"> & {
-    status?: LocalDoctorBooking["status"];
-    paymentStatus?: LocalDoctorBooking["paymentStatus"];
-  },
-) {
-  const nextBooking: LocalDoctorBooking = {
-    id: nextId("booking"),
-    createdAt: new Date().toISOString(),
-    status: booking.status || "upcoming",
-    paymentStatus: booking.paymentStatus || "paid",
-    ...booking,
-  };
-
-  writeStore(BOOKINGS_KEY, [nextBooking, ...getLocalBookings()]);
-  return nextBooking;
-}
-
-export function getLocalOrders() {
-  return readStore<LocalPharmacyOrder[]>(ORDERS_KEY, []);
-}
-
-export function addLocalOrder(order: Omit<LocalPharmacyOrder, "id" | "createdAt" | "status"> & { status?: LocalPharmacyOrder["status"] }) {
-  const nextOrder: LocalPharmacyOrder = {
-    id: nextId("order"),
-    createdAt: new Date().toISOString(),
-    status: order.status || "placed",
-    ...order,
-  };
-
-  writeStore(ORDERS_KEY, [nextOrder, ...getLocalOrders()]);
-  return nextOrder;
-}
-
 export const mobileStoreKeys = {
   cart: CART_KEY,
-  bookings: BOOKINGS_KEY,
-  orders: ORDERS_KEY,
 };

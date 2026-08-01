@@ -67,10 +67,14 @@ export type PendingPayment =
       redirectUri: string;
       payment: CreateTransactionPayload;
       order: {
-        paymentMethod: string;
+        paymentMethod: "upi" | "card" | "cod";
+        pharmacyId: string | null;
+        subtotal: number;
+        deliveryFee: number;
         total: number;
         itemCount: number;
         pharmacyName: string;
+        deliveryAddress: string;
         items: Array<{
           productId: string;
           quantity: number;
@@ -82,28 +86,12 @@ export type PendingPayment =
 
 const PENDING_KEY = "saiman-web-pending-payment-v1";
 
-function normalizeBase(value: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return "";
-  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  return withProtocol.replace(/\/+$/, "");
-}
-
-export function getCallServerBase() {
-  return normalizeBase(process.env.NEXT_PUBLIC_CALL_SERVER_URL || "");
-}
-
 async function fetchWithAuth<T>(path: string, init?: RequestInit): Promise<T> {
-  const apiBaseUrl = getCallServerBase();
-  if (!apiBaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_CALL_SERVER_URL for Razorpay checkout.");
-  }
-
   const supabase = getSupabaseBrowserClient();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(path, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -190,4 +178,11 @@ export async function verifyWebPayment(search: URLSearchParams) {
   });
 
   return { pending, transaction: verified.transaction };
+}
+
+export async function linkTransactionToEntity(params: { transactionId: string; entityId: string; entityType: string }) {
+  await fetchWithAuth<{ ok: boolean; transactionId: string }>("/api/payments/link-booking", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }
