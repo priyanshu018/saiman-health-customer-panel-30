@@ -11,10 +11,18 @@ export type TransactionServiceType =
   | "hospital_booking"
   | "ctmri_booking";
 
+export type BookingRef =
+  | { kind: "lab_booking"; approvalId: string }
+  | { kind: "hospital_booking"; approvalId: string }
+  | { kind: "ctmri_booking"; approvalId: string }
+  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" };
+
 export type CreateTransactionPayload = {
   serviceType: TransactionServiceType;
   serviceLabel: string;
   description: string;
+  // Ignored server-side when bookingRef is present — kept only as a fallback
+  // for service types (doctor/pharmacy) that don't use server-side pricing.
   amount: number;
   paymentMethod: string;
   providerId?: string | null;
@@ -25,6 +33,10 @@ export type CreateTransactionPayload = {
     phone?: string | null;
   } | null;
   metadata?: Record<string, unknown>;
+  // When present, /api/payments/create-order recomputes the authoritative
+  // amount server-side from the admin-approved catalog row instead of
+  // trusting `amount` above.
+  bookingRef?: BookingRef;
 };
 
 type CreateTransactionResponse = {
@@ -81,6 +93,55 @@ export type PendingPayment =
           price: number;
           name: string;
         }>;
+      };
+    }
+  | {
+      kind: "lab_booking";
+      returnTo: string;
+      redirectUri: string;
+      payment: CreateTransactionPayload;
+      booking: {
+        labId: string;
+        labName: string;
+        labAddress?: string | null;
+        city?: string | null;
+        catalogTestId?: string | null;
+        testName: string;
+        homeCollection: boolean;
+        reportTime?: string | null;
+        notes?: string | null;
+      };
+    }
+  | {
+      kind: "hospital_booking" | "ctmri_booking";
+      returnTo: string;
+      redirectUri: string;
+      payment: CreateTransactionPayload;
+      booking: {
+        providerId: string;
+        approvalId: string;
+        serviceName: string;
+        appointmentDate: string;
+        appointmentTime: string;
+        notes?: string | null;
+      };
+    }
+  | {
+      kind: "rental_order";
+      returnTo: string;
+      redirectUri: string;
+      payment: CreateTransactionPayload;
+      booking: {
+        providerId: string;
+        equipmentId: string;
+        equipmentName: string;
+        equipmentImageUrl?: string | null;
+        providerName: string;
+        plan: "daily" | "weekly" | "monthly" | "quarterly";
+        rentalDays: number;
+        deliveryAddress: string;
+        deliveryDate?: string | null;
+        deliveryTimeSlot?: string | null;
       };
     };
 
@@ -184,5 +245,21 @@ export async function linkTransactionToEntity(params: { transactionId: string; e
   await fetchWithAuth<{ ok: boolean; transactionId: string }>("/api/payments/link-booking", {
     method: "POST",
     body: JSON.stringify(params),
+  });
+}
+
+type FulfillResponse = {
+  entityId: string;
+  entityType: string;
+  alreadyFulfilled: boolean;
+};
+
+// Idempotent: safe to call more than once for the same transaction (e.g. if
+// the customer refreshes the payment-callback page) — the server returns the
+// existing booking instead of creating a duplicate.
+export async function fulfillServiceBooking(transactionId: string, booking: Record<string, unknown>) {
+  return fetchWithAuth<FulfillResponse>("/api/service-bookings/fulfill", {
+    method: "POST",
+    body: JSON.stringify({ transactionId, booking }),
   });
 }

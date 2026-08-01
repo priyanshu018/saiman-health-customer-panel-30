@@ -47,9 +47,12 @@ export type PharmacyProductSummary = {
 
 export type LabTestSummary = {
   id: string;
+  labId: string;
+  catalogTestId: string | null;
   name: string;
   category: string;
   labName: string;
+  labAddress: string;
   city: string;
   price: number;
   reportTime: string;
@@ -95,6 +98,7 @@ export type CtmriServiceSummary = {
 
 export type RentalEquipmentSummary = {
   id: string;
+  providerId: string | null;
   name: string;
   category: string;
   description: string;
@@ -514,9 +518,12 @@ export async function fetchApprovedLabTests() {
 
           return {
             id: row.id,
+            labId: row.lab_id,
+            catalogTestId: row.catalog_test_id || null,
             name: text(test.name, "Lab Test"),
             category: text(test.category, "General"),
             labName: text(lab.lab_name, "Approved Lab"),
+            labAddress: "Address shared after booking",
             city: text(lab.city, "Location not specified"),
             price: numberValue(row.price, 0),
             reportTime: text(test.report_delivery_text, "24-48 hrs"),
@@ -531,7 +538,7 @@ export async function fetchApprovedLabTests() {
 
   const legacyQuery = await supabase
     .from("lab_test_approvals")
-    .select("id,test_name,category,lab_name,city,price,report_time,image_url")
+    .select("id,test_name,category,lab_name,city,price,report_time,image_url,lab_id,catalog_test_id")
     .eq("status", "Approved")
     .eq("is_active", true)
     .order("test_name", { ascending: true });
@@ -540,9 +547,12 @@ export async function fetchApprovedLabTests() {
 
   return (legacyQuery.data || []).map((row) => ({
     id: row.id,
+    labId: row.lab_id,
+    catalogTestId: row.catalog_test_id || null,
     name: text(row.test_name, "Lab Test"),
     category: text(row.category, "General"),
     labName: text(row.lab_name, "Approved Lab"),
+    labAddress: "Address shared after booking",
     city: text(row.city, "Location not specified"),
     price: numberValue(row.price, 0),
     reportTime: text(row.report_time, "24-48 hrs"),
@@ -691,13 +701,14 @@ export async function fetchApprovedRentalEquipment() {
   const supabase = client();
   const { data, error } = await supabase
     .from("rental_equipment_approvals")
-    .select("id,name,category,owner,city,price,weekly_price,monthly_price,deposit,brand,model,description,image_url,stock,status")
+    .select("id,name,category,owner,city,price,weekly_price,monthly_price,deposit,brand,model,description,image_url,stock,status,submitted_by_id")
     .eq("status", "Approved")
     .order("name", { ascending: true });
 
   if (error) throw new Error(error.message);
   return (data || []).map((row) => ({
     id: row.id,
+    providerId: row.submitted_by_id || null,
     name: text(row.name, "Equipment"),
     category: text(row.category, "Patient Care"),
     description: text(row.description),
@@ -1222,4 +1233,145 @@ export function subscribeToInstantCallRequest(patientId: string, onChange: () =>
   return () => {
     void supabase.removeChannel(channel);
   };
+}
+
+// ---------------------------------------------------------------------------
+// Shared status display helper — never show a raw snake_case/enum value to a
+// customer. Title-cases and de-underscores; specific tables' real values
+// ("sample_collected", "return_requested", etc.) all read cleanly through this.
+// ---------------------------------------------------------------------------
+export function formatBookingStatus(status: string) {
+  const normalized = String(status || "").trim();
+  if (!normalized) return "Pending";
+  return normalized
+    .replace(/_/g, " ")
+    .split(" ")
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : word))
+    .join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// Lab test bookings
+// ---------------------------------------------------------------------------
+export type LabBookingSummary = {
+  id: string;
+  labName: string;
+  status: string;
+  paymentStatus: string;
+  homeCollection: boolean;
+  reportTime: string;
+  total: number;
+  createdAt: string;
+};
+
+export async function fetchPatientLabBookings(patientId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("lab_test_bookings")
+    .select("id,lab_name,status,payment_status,home_collection,report_time,total,created_at")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: row.id,
+    labName: text(row.lab_name, "Approved Lab"),
+    status: text(row.status, "placed"),
+    paymentStatus: text(row.payment_status, "pending"),
+    homeCollection: Boolean(row.home_collection),
+    reportTime: text(row.report_time, "24-48 hrs"),
+    total: numberValue(row.total, 0),
+    createdAt: text(row.created_at),
+  })) satisfies LabBookingSummary[];
+}
+
+// ---------------------------------------------------------------------------
+// Hospital & CT/MRI provider-service bookings (shared shape)
+// ---------------------------------------------------------------------------
+export type ProviderServiceBookingSummary = {
+  id: string;
+  serviceName: string;
+  status: string;
+  paymentStatus: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  amount: number;
+  createdAt: string;
+};
+
+export async function fetchPatientProviderServiceBookings(kind: "hospital" | "ctmri", patientId: string) {
+  const table = kind === "hospital" ? "hospital_service_bookings" : "ctmri_service_bookings";
+  const supabase = client();
+  const { data, error } = await supabase
+    .from(table)
+    .select("id,service_name,status,payment_status,appointment_date,appointment_time,amount,created_at")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: row.id,
+    serviceName: text(row.service_name, kind === "hospital" ? "Hospital Consultation" : "Imaging Scan"),
+    status: text(row.status, "requested"),
+    paymentStatus: text(row.payment_status, "pending"),
+    appointmentDate: text(row.appointment_date),
+    appointmentTime: text(row.appointment_time),
+    amount: numberValue(row.amount, 0),
+    createdAt: text(row.created_at),
+  })) satisfies ProviderServiceBookingSummary[];
+}
+
+// ---------------------------------------------------------------------------
+// Rental equipment orders
+// ---------------------------------------------------------------------------
+export type RentalOrderSummary = {
+  id: string;
+  equipmentName: string;
+  providerName: string;
+  plan: string;
+  rentalDays: number;
+  status: string;
+  paymentStatus: string;
+  total: number;
+  deliveryAddress: string;
+  createdAt: string;
+};
+
+export async function fetchPatientRentalOrders(patientId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("rental_orders")
+    .select("id,equipment_name,provider_name,plan,rental_days,status,payment_status,total,delivery_address,created_at")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: row.id,
+    equipmentName: text(row.equipment_name, "Rental Equipment"),
+    providerName: text(row.provider_name, "Verified Provider"),
+    plan: text(row.plan, "daily"),
+    rentalDays: numberValue(row.rental_days, 1),
+    status: text(row.status, "placed"),
+    paymentStatus: text(row.payment_status, "pending"),
+    total: numberValue(row.total, 0),
+    deliveryAddress: text(row.delivery_address),
+    createdAt: text(row.created_at),
+  })) satisfies RentalOrderSummary[];
+}
+
+export async function requestRentalReturn(orderId: string, returnMethod: "pickup" | "self") {
+  const supabase = client();
+  const { error } = await supabase
+    .from("rental_orders")
+    .update({ status: "return_requested", return_method: returnMethod, return_requested_at: new Date().toISOString() })
+    .eq("id", orderId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function cancelRentalOrder(orderId: string) {
+  const supabase = client();
+  const { error } = await supabase.from("rental_orders").update({ status: "cancelled" }).eq("id", orderId);
+  if (error) throw new Error(error.message);
 }

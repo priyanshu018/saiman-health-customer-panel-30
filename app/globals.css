@@ -1087,6 +1087,27 @@ a {
   }
 }
 
+.hover-lift {
+  transition: transform var(--motion-standard), box-shadow var(--motion-standard), border-color var(--motion-standard);
+}
+
+.hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-floating);
+  border-color: var(--line-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover {
+    transform: none;
+  }
+}
+
+.hover-lift:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .skeleton-shimmer {
   background-image: linear-gradient(100deg, rgba(37, 99, 235, 0.08) 30%, rgba(37, 99, 235, 0.16) 45%, rgba(37, 99, 235, 0.08) 60%);
   background-size: 250% 100%;

@@ -9,6 +9,7 @@ import { SiteHeader } from "@/components/site-header";
 import { recordsSummary, subscriptionPlans, supportTopics } from "@/lib/customer-web-data";
 import {
   cancelInstantCallRequest,
+  cancelRentalOrder,
   createDoctorAppointment,
   createPharmacyOrder,
   createStaffingBooking,
@@ -24,12 +25,17 @@ import {
   fetchCustomerProfile,
   fetchInstantCallHistory,
   fetchPatientAppointments,
+  fetchPatientLabBookings,
   fetchPatientPharmacyOrders,
+  fetchPatientProviderServiceBookings,
+  fetchPatientRentalOrders,
   fetchPatientStaffingBookings,
   fetchSupportTickets,
+  formatBookingStatus,
   loginCustomer,
   markInstantCallConnecting,
   requestInstantCall,
+  requestRentalReturn,
   signupCustomer,
   STAFF_TYPES,
   STAFFING_DURATIONS,
@@ -41,10 +47,13 @@ import {
   type DoctorSummary,
   type HospitalServiceSummary,
   type InstantCallSummary,
+  type LabBookingSummary,
   type LabTestSummary,
   type PharmacyOrderSummary,
   type PharmacyProductSummary,
+  type ProviderServiceBookingSummary,
   type RentalEquipmentSummary,
+  type RentalOrderSummary,
   type StaffingBookingSummary,
   type StaffingProviderSummary,
   type SupportTicketSummary,
@@ -62,7 +71,7 @@ import {
   subscribeStore,
   type DemoPharmacyProduct,
 } from "@/lib/mobile-web-state";
-import { beginWebPayment, clearPendingPayment, getPendingPayment, linkTransactionToEntity, verifyWebPayment } from "@/lib/web-payments";
+import { beginWebPayment, clearPendingPayment, fulfillServiceBooking, getPendingPayment, linkTransactionToEntity, verifyWebPayment } from "@/lib/web-payments";
 
 function formatMoney(value: number) {
   return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -241,7 +250,7 @@ function SkeletonBlock({ style }: { style: React.CSSProperties }) {
 
 function TileCardSkeleton() {
   return (
-    <div style={styles.infoTileCard}>
+    <div className="hover-lift" style={styles.infoTileCard}>
       <SkeletonBlock style={styles.tileVisual} />
       <SkeletonBlock style={{ width: "40%", height: 14, borderRadius: 999 }} />
       <SkeletonBlock style={{ width: "80%", height: 18, borderRadius: 8 }} />
@@ -263,7 +272,7 @@ function TileGridSkeleton({ count = 6 }: { count?: number }) {
 
 function DoctorCardSkeleton() {
   return (
-    <div style={styles.doctorCard}>
+    <div className="hover-lift" style={styles.doctorCard}>
       <SkeletonBlock style={styles.doctorAvatarPanel} />
       <div style={{ display: "grid", gap: 8 }}>
         <SkeletonBlock style={{ width: "70%", height: 16, borderRadius: 8 }} />
@@ -571,10 +580,13 @@ function DashboardFrame({
 }
 
 export function WebHomeScreen() {
+  const router = useRouter();
   const { user } = useCustomerUser();
   const cart = useCart();
   const [upcomingAppointments, setUpcomingAppointments] = useState(0);
   const [pharmacyOrders, setPharmacyOrders] = useState(0);
+  const [openTickets, setOpenTickets] = useState(0);
+  const [homeQuery, setHomeQuery] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -586,26 +598,34 @@ export function WebHomeScreen() {
     fetchPatientPharmacyOrders(user.id)
       .then((items) => setPharmacyOrders(items.length))
       .catch(() => setPharmacyOrders(0));
+    fetchSupportTickets(user.id)
+      .then((items) => setOpenTickets(items.filter((item) => !["resolved", "closed"].includes(item.status.toLowerCase())).length))
+      .catch(() => setOpenTickets(0));
   }, [user]);
 
   const services = [
-    { title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
-    { title: "Pharmacy", detail: "Browse medicines and place a Razorpay checkout order.", href: "/pharmacy" },
-    { title: "Lab Tests", detail: "Search tests and compare available labs.", href: "/lab-tests" },
-    { title: "CT / MRI", detail: "Compare imaging services with approved centers.", href: "/ct-mri" },
-    { title: "Ambulance", detail: "Request emergency pickup and support instantly.", href: "/ambulance" },
-    { title: "Rental Equipment", detail: "Browse patient-care equipment available for rent.", href: "/rental-equipment" },
-    { title: "Hospitals & Surgeries", detail: "Discover approved hospitals and surgery services.", href: "/hospitals" },
-    { title: "Health Card", detail: "Review membership-style plans and document readiness.", href: "/health-card" },
-    { title: "Care Staff", detail: "Find nurses, caregivers, and support professionals.", href: "/care-staff" },
+    { icon: "🩺", title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
+    { icon: "💊", title: "Pharmacy", detail: "Browse medicines and check out securely.", href: "/pharmacy" },
+    { icon: "🧪", title: "Lab Tests", detail: "Search tests and compare available labs.", href: "/lab-tests" },
+    { icon: "🩻", title: "CT / MRI", detail: "Compare imaging services with approved centers.", href: "/ct-mri" },
+    { icon: "🚑", title: "Ambulance", detail: "Request emergency pickup and support instantly.", href: "/ambulance" },
+    { icon: "🦽", title: "Rental Equipment", detail: "Browse patient-care equipment available for rent.", href: "/rental-equipment" },
+    { icon: "🏥", title: "Hospitals & Surgeries", detail: "Discover approved hospitals and surgery services.", href: "/hospitals" },
+    { icon: "🪪", title: "Health Card", detail: "Review membership-style plans and document readiness.", href: "/health-card" },
+    { icon: "🧑‍⚕️", title: "Care Staff", detail: "Find nurses, caregivers, and support professionals.", href: "/care-staff" },
   ];
 
   const overviewStats = [
     { label: "Upcoming appointments", value: String(upcomingAppointments), href: "/appointments" },
     { label: "Cart items", value: String(cart.itemCount), href: "/pharmacy/cart" },
     { label: "Pharmacy orders", value: String(pharmacyOrders), href: "/pharmacy/orders" },
-    { label: "Health card", value: "Active", href: "/health-card" },
+    { label: "Open support tickets", value: String(openTickets), href: "/support" },
   ];
+
+  function handleHomeSearch(event: React.FormEvent) {
+    event.preventDefault();
+    router.push(homeQuery.trim() ? `/doctors?q=${encodeURIComponent(homeQuery.trim())}` : "/doctors");
+  }
 
   return (
     <DashboardFrame
@@ -615,7 +635,7 @@ export function WebHomeScreen() {
     >
       <div style={styles.statRow}>
         {overviewStats.map((stat) => (
-          <Link key={stat.label} href={stat.href} style={styles.statCard}>
+          <Link key={stat.label} href={stat.href} className="hover-lift" style={styles.statCard}>
             <span style={styles.statLabel}>{stat.label}</span>
             <strong style={styles.statValue}>{stat.value}</strong>
           </Link>
@@ -624,9 +644,9 @@ export function WebHomeScreen() {
 
       <div style={styles.heroGrid}>
         <section style={styles.heroPanel}>
-          <div style={styles.heroTag}>Limited time</div>
-          <h2 style={styles.heroHeading}>20% off lab tests. One place for every healthcare service.</h2>
-          <p style={styles.heroCopy}>Book trusted doctors, medicines, tests, ambulance help, hospitals, and instant calls from a web experience modeled after the customer app.</p>
+          <div style={styles.heroTag}>Saiman Healthcare</div>
+          <h2 style={styles.heroHeading}>Every healthcare service your family needs, in one place.</h2>
+          <p style={styles.heroCopy}>Book trusted doctors, order medicines, schedule diagnostics, and reach emergency support — all from a single, secure account.</p>
           <div style={styles.heroActionRow}>
             <Link href="/doctors" style={styles.primaryActionLink}>Book Doctor</Link>
             <Link href="/pharmacy" style={styles.secondaryActionLink}>Browse Medicines</Link>
@@ -634,10 +654,15 @@ export function WebHomeScreen() {
         </section>
 
         <section style={styles.sideFeatureStack}>
-          <div style={styles.searchModule}>
+          <form style={styles.searchModule} onSubmit={handleHomeSearch}>
             <strong>Search doctors, tests, medicines, and more</strong>
-            <span>Doctors, tests, medicines, hospitals, and support</span>
-          </div>
+            <input
+              style={styles.fieldInput}
+              value={homeQuery}
+              onChange={(event) => setHomeQuery(event.target.value)}
+              placeholder="Try &quot;Cardiologist&quot; or &quot;Blood test&quot;"
+            />
+          </form>
           <div style={styles.tipCard}>
             <span style={styles.tipTag}>Lab Tests</span>
             <strong>How to prepare for a lab test</strong>
@@ -649,12 +674,12 @@ export function WebHomeScreen() {
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Our Services</h2>
-          <Link href="/support" style={styles.linkActionInline}>View all</Link>
+          <Link href="/support" style={styles.linkActionInline}>Need help?</Link>
         </div>
         <div style={styles.serviceGrid}>
           {services.map((service) => (
-            <Link key={service.title} href={service.href} style={styles.serviceCard}>
-              <div style={styles.serviceIcon}>✚</div>
+            <Link key={service.title} href={service.href} className="hover-lift" style={styles.serviceCard}>
+              <div style={styles.serviceIcon}>{service.icon}</div>
               <strong>{service.title}</strong>
               <p>{service.detail}</p>
             </Link>
@@ -781,7 +806,7 @@ export function WebDoctorsScreen() {
 
       <div style={styles.doctorGrid}>
         {loading ? null : filtered.map((doctor) => (
-          <Link key={doctor.id} href={`/doctors/${doctor.id}`} style={styles.doctorCard}>
+          <Link key={doctor.id} href={`/doctors/${doctor.id}`} className="hover-lift" style={styles.doctorCard}>
             <DoctorImage
               doctor={doctor}
               style={styles.doctorAvatarPanel}
@@ -1187,7 +1212,7 @@ export function WebInstantCallScreen() {
           </div>
           <div style={styles.appointmentGrid}>
             {history.map((item) => (
-              <div key={item.id} style={styles.appointmentCard}>
+              <div key={item.id} className="hover-lift" style={styles.appointmentCard}>
                 <strong>{item.specialty}</strong>
                 <span>{item.callReason || "Instant call request"}</span>
                 <small>{formatDate(item.createdAt)}</small>
@@ -1244,7 +1269,7 @@ export function WebAppointmentsScreen() {
       ) : (
         <div style={styles.appointmentGrid}>
           {filtered.map((item) => (
-            <div key={item.id} style={styles.appointmentCard}>
+            <div key={item.id} className="hover-lift" style={styles.appointmentCard}>
               <strong>{item.doctorName}</strong>
               <span>{item.doctorSpecialty}</span>
               <small>{item.hospital}</small>
@@ -1470,7 +1495,7 @@ export function WebLabTestsScreen() {
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((test) => (
-          <div key={test.id} style={styles.infoTileCard}>
+          <Link key={test.id} href={`/lab-tests/${test.id}`} className="hover-lift" style={styles.infoTileCard}>
             <MarketplaceImage
               src={test.imageUrl}
               fallbackSrc={APP_FALLBACK_IMAGES.lab}
@@ -1487,13 +1512,225 @@ export function WebLabTestsScreen() {
               <span>{test.reportTime}</span>
             </div>
             <div style={styles.tileFooter}>
-              <strong>{formatMoney(test.price)}</strong>
-              <span style={styles.availableLabel}>Book soon</span>
+              <strong>{test.price > 0 ? formatMoney(test.price) : "Fee on request"}</strong>
+              <span style={styles.availableLabel}>Book test</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </DashboardFrame>
+  );
+}
+
+const LAB_TIME_SLOTS = ["07:00 AM", "08:00 AM", "09:00 AM", "10:00 AM", "05:00 PM", "06:00 PM"];
+
+export function WebLabTestDetailScreen({ testId }: { testId: string }) {
+  const { requireAuth } = useAuthActionGuard();
+  const [test, setTest] = useState<LabTestSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [collectionType, setCollectionType] = useState<"home" | "lab">("home");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [date, setDate] = useState(todayIsoDate);
+  const [time, setTime] = useState(LAB_TIME_SLOTS[0]);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchApprovedLabTests()
+      .then((items) => {
+        const found = items.find((item) => item.id === testId) || null;
+        setTest(found);
+        if (found) setCity(found.city !== "Location not specified" ? found.city : "");
+      })
+      .finally(() => setLoading(false));
+  }, [testId]);
+
+  async function handleSubmit() {
+    setError("");
+    const user = requireAuth(`/lab-tests/${testId}`);
+    if (!user || !test) return;
+    if (collectionType === "home" && !address.trim()) {
+      setError("Add an address for home sample collection.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await beginWebPayment({
+        kind: "lab_booking",
+        returnTo: "/lab-tests/bookings?created=1",
+        redirectUri: `${window.location.origin}/payment-callback`,
+        booking: {
+          labId: test.labId,
+          labName: test.labName,
+          labAddress: collectionType === "lab" ? test.labAddress : null,
+          city: city || test.city,
+          catalogTestId: test.catalogTestId,
+          testName: test.name,
+          homeCollection: collectionType === "home",
+          reportTime: test.reportTime,
+          notes: JSON.stringify({ collectionType, date, time, address: collectionType === "home" ? address : null, notes }),
+        },
+        payment: {
+          serviceType: "lab_booking",
+          serviceLabel: test.name,
+          description: `${test.name} at ${test.labName}`,
+          amount: test.price,
+          paymentMethod: "upi",
+          providerName: test.labName,
+          bookingRef: { kind: "lab_booking", approvalId: test.id },
+          customer: { name: user.name, email: user.email, phone: user.phone },
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start payment.");
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardFrame title="Lab Test" subtitle="Loading test details...">
+        <div style={styles.noticeCard}>Loading test details...</div>
+      </DashboardFrame>
+    );
+  }
+
+  if (!test) {
+    return (
+      <DashboardFrame title="Lab Test" subtitle="This test is no longer available.">
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>Test not found</h2>
+          <p style={styles.emptyCopy}>This lab test may have been removed or is no longer approved.</p>
+          <Link href="/lab-tests" style={styles.primaryActionLink}>Browse Lab Tests</Link>
+        </section>
+      </DashboardFrame>
+    );
+  }
+
+  return (
+    <DashboardFrame title={test.name} subtitle={`${test.labName} · ${test.city}`}>
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Test Details</h2>
+        </div>
+        <div style={styles.infoStatGrid}>
+          <div style={styles.infoStatCard}>
+            <strong>Category</strong>
+            <span>{test.category}</span>
+          </div>
+          <div style={styles.infoStatCard}>
+            <strong>Report time</strong>
+            <span>{test.reportTime}</span>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Sample Collection</h2>
+        </div>
+        <div style={styles.chipRow}>
+          <button type="button" onClick={() => setCollectionType("home")} style={{ ...styles.filterChip, ...(collectionType === "home" ? styles.filterChipActive : {}) }}>
+            Home Collection
+          </button>
+          <button type="button" onClick={() => setCollectionType("lab")} style={{ ...styles.filterChip, ...(collectionType === "lab" ? styles.filterChipActive : {}) }}>
+            Visit Lab Center
+          </button>
+        </div>
+
+        <div style={styles.formStack}>
+          {collectionType === "home" ? (
+            <>
+              <label style={styles.fieldLabel}>Collection address</label>
+              <textarea style={styles.textArea} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="House / street, landmark" />
+            </>
+          ) : (
+            <div style={styles.noticeCard}>Sample will be collected at {test.labName}{test.labAddress ? ` — ${test.labAddress}` : ""}.</div>
+          )}
+          <label style={styles.fieldLabel}>City</label>
+          <input style={styles.fieldInput} value={city} onChange={(event) => setCity(event.target.value)} placeholder="Enter city" />
+          <label style={styles.fieldLabel}>Preferred date</label>
+          <input type="date" style={styles.fieldInput} value={date} min={todayIsoDate()} onChange={(event) => setDate(event.target.value)} />
+          <label style={styles.fieldLabel}>Preferred time</label>
+          <select style={styles.fieldInput} value={time} onChange={(event) => setTime(event.target.value)}>
+            {LAB_TIME_SLOTS.map((slot) => (
+              <option key={slot} value={slot}>{slot}</option>
+            ))}
+          </select>
+          <label style={styles.fieldLabel}>Notes (optional)</label>
+          <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Fasting status, medical history, or any other note for the lab" />
+        </div>
+      </section>
+
+      <section style={styles.checkoutBar}>
+        <div>
+          <strong style={styles.checkoutTitle}>{test.name}</strong>
+          <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
+        </div>
+        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+          {submitting ? "Starting..." : `Pay ${formatMoney(test.price)}`}
+        </button>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+function LabBookingsInner() {
+  const { user } = useCustomerUser();
+  const searchParams = useSearchParams();
+  const [bookings, setBookings] = useState<LabBookingSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPatientLabBookings(user.id)
+      .then(setBookings)
+      .catch(() => setBookings([]))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  return (
+    <DashboardFrame title="Lab Test Bookings" subtitle="Track your diagnostic test bookings from confirmation to report.">
+      {searchParams.get("created") === "1" ? <div style={styles.noticeCard}>Your lab test booking is confirmed. Track its status below.</div> : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading your bookings...</div> : null}
+
+      {!loading && !bookings.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No lab test bookings yet</h2>
+          <p style={styles.emptyCopy}>Book a diagnostic test with a verified lab near you.</p>
+          <Link href="/lab-tests" style={styles.primaryActionLink}>Browse Lab Tests</Link>
+        </section>
+      ) : (
+        <div style={styles.appointmentGrid}>
+          {bookings.map((booking) => (
+            <div key={booking.id} className="hover-lift" style={styles.appointmentCard}>
+              <strong>{booking.labName}</strong>
+              <span>{booking.homeCollection ? "Home collection" : "Lab visit"}</span>
+              <small>{booking.reportTime}</small>
+              <p>{formatDate(booking.createdAt)}</p>
+              <div style={styles.doctorFooter}>
+                <span>{formatBookingStatus(booking.status)}</span>
+                <strong>{formatMoney(booking.total)}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </DashboardFrame>
+  );
+}
+
+export function WebLabBookingsScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading your bookings...</div></div>}>
+      <LabBookingsInner />
+    </Suspense>
   );
 }
 
@@ -1535,7 +1772,7 @@ export function WebHospitalsScreen() {
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((service) => (
-          <div key={service.id} style={styles.infoTileCard}>
+          <Link key={service.id} href={`/hospitals/${service.id}`} className="hover-lift" style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
               fallbackSrc={APP_FALLBACK_IMAGES.hospital}
@@ -1557,15 +1794,204 @@ export function WebHospitalsScreen() {
             </div>
             <div style={styles.tileFooter}>
               <div style={styles.priceStack}>
-                <strong>{formatMoney(service.price)}</strong>
+                <strong>{service.price > 0 ? formatMoney(service.price) : "Fee on request"}</strong>
                 {service.basePrice > service.price ? <span style={styles.strikeText}>{formatMoney(service.basePrice)}</span> : null}
               </div>
-              <span style={styles.availableLabel}>Instant booking</span>
+              <span style={styles.availableLabel}>Request consultation</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </DashboardFrame>
+  );
+}
+
+const HOSPITAL_TIME_SLOTS = ["09:00 AM", "10:00 AM", "11:00 AM", "01:00 PM", "03:00 PM", "05:00 PM"];
+
+export function WebHospitalDetailScreen({ serviceId }: { serviceId: string }) {
+  const { requireAuth } = useAuthActionGuard();
+  const [service, setService] = useState<HospitalServiceSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState(todayIsoDate);
+  const [time, setTime] = useState(HOSPITAL_TIME_SLOTS[0]);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchApprovedHospitalServices()
+      .then((items) => setService(items.find((item) => item.id === serviceId) || null))
+      .finally(() => setLoading(false));
+  }, [serviceId]);
+
+  async function handleSubmit() {
+    setError("");
+    const user = requireAuth(`/hospitals/${serviceId}`);
+    if (!user || !service) return;
+
+    setSubmitting(true);
+    try {
+      await beginWebPayment({
+        kind: "hospital_booking",
+        returnTo: "/hospitals/requests?created=1",
+        redirectUri: `${window.location.origin}/payment-callback`,
+        booking: {
+          providerId: service.providerId,
+          approvalId: service.id,
+          serviceName: service.serviceName,
+          appointmentDate: date,
+          appointmentTime: time,
+          notes: notes || null,
+        },
+        payment: {
+          serviceType: "hospital_booking",
+          serviceLabel: service.serviceName,
+          description: `${service.serviceName} at ${service.providerName}`,
+          amount: service.price,
+          paymentMethod: "upi",
+          providerId: service.providerId,
+          providerName: service.providerName,
+          bookingRef: { kind: "hospital_booking", approvalId: service.id },
+          customer: { name: user.name, email: user.email, phone: user.phone },
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start payment.");
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardFrame title="Hospital Service" subtitle="Loading details...">
+        <div style={styles.noticeCard}>Loading details...</div>
+      </DashboardFrame>
+    );
+  }
+
+  if (!service) {
+    return (
+      <DashboardFrame title="Hospital Service" subtitle="This service is no longer available.">
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>Service not found</h2>
+          <p style={styles.emptyCopy}>This hospital service may have been removed or is no longer approved in your area.</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link href="/hospitals" style={styles.primaryActionLink}>Browse Hospitals</Link>
+            <Link href="/support" style={styles.secondaryActionLink}>Contact Support</Link>
+          </div>
+        </section>
+      </DashboardFrame>
+    );
+  }
+
+  return (
+    <DashboardFrame title={service.serviceName} subtitle={`${service.providerName} · ${service.providerCity}`}>
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Hospital Details</h2>
+        </div>
+        <p style={styles.tileCopy}>{service.description || "Verified hospital partner."}</p>
+        <div style={styles.infoStatGrid}>
+          <div style={styles.infoStatCard}>
+            <strong>Specialty</strong>
+            <span>{service.category}</span>
+          </div>
+          <div style={styles.infoStatCard}>
+            <strong>Address</strong>
+            <span>{service.providerAddress}</span>
+          </div>
+          <div style={styles.infoStatCard}>
+            <strong>Beds</strong>
+            <span>{service.totalBeds ? `${service.totalBeds} beds` : "On request"}</span>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Request Consultation</h2>
+        </div>
+        <div style={styles.noticeCard}>
+          This submits a consultation request — the hospital confirms your exact appointment slot after review.
+        </div>
+        <div style={styles.formStack}>
+          <label style={styles.fieldLabel}>Preferred date</label>
+          <input type="date" style={styles.fieldInput} value={date} min={todayIsoDate()} onChange={(event) => setDate(event.target.value)} />
+          <label style={styles.fieldLabel}>Preferred time</label>
+          <select style={styles.fieldInput} value={time} onChange={(event) => setTime(event.target.value)}>
+            {HOSPITAL_TIME_SLOTS.map((slot) => (
+              <option key={slot} value={slot}>{slot}</option>
+            ))}
+          </select>
+          <label style={styles.fieldLabel}>Reason for visit / medical history summary</label>
+          <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Describe the condition or treatment you'd like to discuss" />
+        </div>
+      </section>
+
+      <section style={styles.checkoutBar}>
+        <div>
+          <strong style={styles.checkoutTitle}>{service.serviceName}</strong>
+          <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
+        </div>
+        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+          {submitting ? "Starting..." : `Pay ${formatMoney(service.price)}`}
+        </button>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+function HospitalRequestsInner() {
+  const { user } = useCustomerUser();
+  const searchParams = useSearchParams();
+  const [bookings, setBookings] = useState<ProviderServiceBookingSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPatientProviderServiceBookings("hospital", user.id)
+      .then(setBookings)
+      .catch(() => setBookings([]))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  return (
+    <DashboardFrame title="Hospital Requests" subtitle="Track your hospital consultation requests and their status.">
+      {searchParams.get("created") === "1" ? <div style={styles.noticeCard}>Your consultation request has been sent to the hospital for confirmation.</div> : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading your requests...</div> : null}
+
+      {!loading && !bookings.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No hospital requests yet</h2>
+          <p style={styles.emptyCopy}>Request a consultation with a verified hospital or surgery center.</p>
+          <Link href="/hospitals" style={styles.primaryActionLink}>Browse Hospitals</Link>
+        </section>
+      ) : (
+        <div style={styles.appointmentGrid}>
+          {bookings.map((booking) => (
+            <div key={booking.id} className="hover-lift" style={styles.appointmentCard}>
+              <strong>{booking.serviceName}</strong>
+              <p>{formatDateTimeLabel(booking.appointmentDate, booking.appointmentTime)}</p>
+              <div style={styles.doctorFooter}>
+                <span>{formatBookingStatus(booking.status)}</span>
+                <strong>{formatMoney(booking.amount)}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </DashboardFrame>
+  );
+}
+
+export function WebHospitalRequestsScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading your requests...</div></div>}>
+      <HospitalRequestsInner />
+    </Suspense>
   );
 }
 
@@ -1607,7 +2033,7 @@ export function WebCtmriScreen() {
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((service) => (
-          <div key={service.id} style={styles.infoTileCard}>
+          <Link key={service.id} href={`/ct-mri/${service.id}`} className="hover-lift" style={styles.infoTileCard}>
             <MarketplaceImage
               src={service.imageUrl}
               fallbackSrc="/service-ctmri.svg"
@@ -1625,15 +2051,197 @@ export function WebCtmriScreen() {
             </div>
             <div style={styles.tileFooter}>
               <div style={styles.priceStack}>
-                <strong>{formatMoney(service.price)}</strong>
+                <strong>{service.price > 0 ? formatMoney(service.price) : "Fee on request"}</strong>
                 {service.basePrice > service.price ? <span style={styles.strikeText}>{formatMoney(service.basePrice)}</span> : null}
               </div>
-              <span style={styles.availableLabel}>Same-day slots</span>
+              <span style={styles.availableLabel}>Book scan</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </DashboardFrame>
+  );
+}
+
+const CTMRI_TIME_SLOTS = ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "03:00 PM", "04:00 PM"];
+
+export function WebCtmriDetailScreen({ serviceId }: { serviceId: string }) {
+  const { requireAuth } = useAuthActionGuard();
+  const [service, setService] = useState<CtmriServiceSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState(todayIsoDate);
+  const [time, setTime] = useState(CTMRI_TIME_SLOTS[0]);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchApprovedCtmriServices()
+      .then((items) => setService(items.find((item) => item.id === serviceId) || null))
+      .finally(() => setLoading(false));
+  }, [serviceId]);
+
+  async function handleSubmit() {
+    setError("");
+    const user = requireAuth(`/ct-mri/${serviceId}`);
+    if (!user || !service) return;
+
+    setSubmitting(true);
+    try {
+      await beginWebPayment({
+        kind: "ctmri_booking",
+        returnTo: "/ct-mri/bookings?created=1",
+        redirectUri: `${window.location.origin}/payment-callback`,
+        booking: {
+          providerId: service.providerId,
+          approvalId: service.id,
+          serviceName: service.serviceName,
+          appointmentDate: date,
+          appointmentTime: time,
+          notes: notes || null,
+        },
+        payment: {
+          serviceType: "ctmri_booking",
+          serviceLabel: service.serviceName,
+          description: `${service.serviceName} at ${service.providerName}`,
+          amount: service.price,
+          paymentMethod: "upi",
+          providerId: service.providerId,
+          providerName: service.providerName,
+          bookingRef: { kind: "ctmri_booking", approvalId: service.id },
+          customer: { name: user.name, email: user.email, phone: user.phone },
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start payment.");
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardFrame title="Imaging Scan" subtitle="Loading scan details...">
+        <div style={styles.noticeCard}>Loading scan details...</div>
+      </DashboardFrame>
+    );
+  }
+
+  if (!service) {
+    return (
+      <DashboardFrame title="Imaging Scan" subtitle="This service is no longer available.">
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>Service not found</h2>
+          <p style={styles.emptyCopy}>This imaging service may have been removed or is no longer approved in your area.</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link href="/ct-mri" style={styles.primaryActionLink}>Browse Imaging Centers</Link>
+            <Link href="/support" style={styles.secondaryActionLink}>Contact Support</Link>
+          </div>
+        </section>
+      </DashboardFrame>
+    );
+  }
+
+  return (
+    <DashboardFrame title={service.serviceName} subtitle={`${service.providerName} · ${service.providerCity}`}>
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Center Details</h2>
+        </div>
+        <p style={styles.tileCopy}>{service.description || "Verified diagnostic imaging center."}</p>
+        <div style={styles.infoStatGrid}>
+          <div style={styles.infoStatCard}>
+            <strong>Category</strong>
+            <span>{service.category}</span>
+          </div>
+          <div style={styles.infoStatCard}>
+            <strong>Address</strong>
+            <span>{service.providerAddress}</span>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Schedule Your Scan</h2>
+        </div>
+        <div style={styles.formStack}>
+          <label style={styles.fieldLabel}>Preferred date</label>
+          <input type="date" style={styles.fieldInput} value={date} min={todayIsoDate()} onChange={(event) => setDate(event.target.value)} />
+          <label style={styles.fieldLabel}>Preferred time</label>
+          <select style={styles.fieldInput} value={time} onChange={(event) => setTime(event.target.value)}>
+            {CTMRI_TIME_SLOTS.map((slot) => (
+              <option key={slot} value={slot}>{slot}</option>
+            ))}
+          </select>
+          <label style={styles.fieldLabel}>Notes for the center (optional)</label>
+          <textarea style={styles.textArea} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Referring doctor, prior scans, or any other note" />
+        </div>
+      </section>
+
+      <section style={styles.checkoutBar}>
+        <div>
+          <strong style={styles.checkoutTitle}>{service.serviceName}</strong>
+          <span style={styles.checkoutMeta}>{formatDateTimeLabel(date, time)}</span>
+        </div>
+        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+          {submitting ? "Starting..." : `Pay ${formatMoney(service.price)}`}
+        </button>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+function CtmriBookingsInner() {
+  const { user } = useCustomerUser();
+  const searchParams = useSearchParams();
+  const [bookings, setBookings] = useState<ProviderServiceBookingSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPatientProviderServiceBookings("ctmri", user.id)
+      .then(setBookings)
+      .catch(() => setBookings([]))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  return (
+    <DashboardFrame title="CT / MRI Bookings" subtitle="Track your imaging appointments from request to completion.">
+      {searchParams.get("created") === "1" ? <div style={styles.noticeCard}>Your scan booking is confirmed. Track its status below.</div> : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading your bookings...</div> : null}
+
+      {!loading && !bookings.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No imaging bookings yet</h2>
+          <p style={styles.emptyCopy}>Book a CT or MRI scan with a verified diagnostic center.</p>
+          <Link href="/ct-mri" style={styles.primaryActionLink}>Browse Imaging Centers</Link>
+        </section>
+      ) : (
+        <div style={styles.appointmentGrid}>
+          {bookings.map((booking) => (
+            <div key={booking.id} className="hover-lift" style={styles.appointmentCard}>
+              <strong>{booking.serviceName}</strong>
+              <p>{formatDateTimeLabel(booking.appointmentDate, booking.appointmentTime)}</p>
+              <div style={styles.doctorFooter}>
+                <span>{formatBookingStatus(booking.status)}</span>
+                <strong>{formatMoney(booking.amount)}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </DashboardFrame>
+  );
+}
+
+export function WebCtmriBookingsScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading your bookings...</div></div>}>
+      <CtmriBookingsInner />
+    </Suspense>
   );
 }
 
@@ -1675,7 +2283,7 @@ export function WebRentalEquipmentScreen() {
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((item) => (
-          <div key={item.id} style={styles.infoTileCard}>
+          <Link key={item.id} href={`/rental-equipment/${item.id}`} className="hover-lift" style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.imageUrl}
               fallbackSrc="/service-rental.svg"
@@ -1690,7 +2298,7 @@ export function WebRentalEquipmentScreen() {
             <p style={styles.tileCopy}>{item.providerName}</p>
             <div style={styles.tileMetaGrid}>
               <span>{item.city}</span>
-              <span>{item.stock} in stock</span>
+              <span>{item.stock > 0 ? `${item.stock} in stock` : "Check availability"}</span>
             </div>
             <div style={styles.priceStack}>
               <strong>{formatMoney(item.price)} / day</strong>
@@ -1700,10 +2308,265 @@ export function WebRentalEquipmentScreen() {
               <span>Deposit {formatMoney(item.deposit)}</span>
               <span style={styles.availableLabel}>Request rental</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </DashboardFrame>
+  );
+}
+
+const RENTAL_PLAN_OPTIONS: Array<{ id: "daily" | "weekly" | "monthly"; label: string }> = [
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+];
+const RENTAL_DELIVERY_FEE = 40;
+
+export function WebRentalEquipmentDetailScreen({ equipmentId }: { equipmentId: string }) {
+  const { requireAuth } = useAuthActionGuard();
+  const [item, setItem] = useState<RentalEquipmentSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [plan, setPlan] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState(todayIsoDate);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchApprovedRentalEquipment()
+      .then((items) => setItem(items.find((entry) => entry.id === equipmentId) || null))
+      .finally(() => setLoading(false));
+  }, [equipmentId]);
+
+  const planPrice = !item ? 0 : plan === "weekly" ? item.weeklyPrice : plan === "monthly" ? item.monthlyPrice : item.price;
+  const total = planPrice + RENTAL_DELIVERY_FEE + (item?.deposit || 0);
+
+  async function handleSubmit() {
+    setError("");
+    const user = requireAuth(`/rental-equipment/${equipmentId}`);
+    if (!user || !item) return;
+    if (!item.providerId) {
+      setError("This equipment listing is missing provider details. Please contact support.");
+      return;
+    }
+    if (!deliveryAddress.trim()) {
+      setError("Add a delivery address.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await beginWebPayment({
+        kind: "rental_order",
+        returnTo: "/rental-equipment/orders?created=1",
+        redirectUri: `${window.location.origin}/payment-callback`,
+        booking: {
+          providerId: item.providerId,
+          equipmentId: item.id,
+          equipmentName: item.name,
+          equipmentImageUrl: item.imageUrl,
+          providerName: item.providerName,
+          plan,
+          rentalDays: plan === "weekly" ? 7 : plan === "monthly" ? 30 : 1,
+          deliveryAddress,
+          deliveryDate,
+          deliveryTimeSlot: null,
+        },
+        payment: {
+          serviceType: "rental_order",
+          serviceLabel: item.name,
+          description: `${plan} rental of ${item.name}`,
+          amount: total,
+          paymentMethod: "upi",
+          providerId: item.providerId,
+          providerName: item.providerName,
+          bookingRef: { kind: "rental_order", approvalId: item.id, plan },
+          customer: { name: user.name, email: user.email, phone: user.phone },
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start payment.");
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardFrame title="Rental Equipment" subtitle="Loading equipment details...">
+        <div style={styles.noticeCard}>Loading equipment details...</div>
+      </DashboardFrame>
+    );
+  }
+
+  if (!item) {
+    return (
+      <DashboardFrame title="Rental Equipment" subtitle="This item is no longer available.">
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>Equipment not found</h2>
+          <p style={styles.emptyCopy}>This listing may have been removed or is no longer approved.</p>
+          <Link href="/rental-equipment" style={styles.primaryActionLink}>Browse Rental Equipment</Link>
+        </section>
+      </DashboardFrame>
+    );
+  }
+
+  return (
+    <DashboardFrame title={item.name} subtitle={`${item.providerName} · ${item.city}`}>
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Equipment Details</h2>
+        </div>
+        <p style={styles.tileCopy}>{item.description || "Verified patient-care equipment."}</p>
+        <div style={styles.infoStatGrid}>
+          <div style={styles.infoStatCard}>
+            <strong>Brand / Model</strong>
+            <span>{item.brand || "—"} {item.model}</span>
+          </div>
+          <div style={styles.infoStatCard}>
+            <strong>Availability</strong>
+            <span>{item.stock > 0 ? `${item.stock} in stock` : "Check with provider"}</span>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Choose Rental Plan</h2>
+        </div>
+        <div style={styles.chipRow}>
+          {RENTAL_PLAN_OPTIONS.map((option) => (
+            <button key={option.id} type="button" onClick={() => setPlan(option.id)} style={{ ...styles.filterChip, ...(plan === option.id ? styles.filterChipActive : {}) }}>
+              {option.label} · {formatMoney(option.id === "weekly" ? item.weeklyPrice : option.id === "monthly" ? item.monthlyPrice : item.price)}
+            </button>
+          ))}
+        </div>
+
+        <div style={styles.formStack}>
+          <label style={styles.fieldLabel}>Delivery address</label>
+          <textarea style={styles.textArea} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="House / street, city, PIN code" />
+          <label style={styles.fieldLabel}>Preferred delivery date</label>
+          <input type="date" style={styles.fieldInput} value={deliveryDate} min={todayIsoDate()} onChange={(event) => setDeliveryDate(event.target.value)} />
+        </div>
+
+        <div style={styles.summaryPanel}>
+          <div style={styles.summaryLine}><span>{RENTAL_PLAN_OPTIONS.find((o) => o.id === plan)?.label} rental</span><strong>{formatMoney(planPrice)}</strong></div>
+          <div style={styles.summaryLine}><span>Delivery fee</span><strong>{formatMoney(RENTAL_DELIVERY_FEE)}</strong></div>
+          <div style={styles.summaryLine}><span>Security deposit (refundable)</span><strong>{formatMoney(item.deposit)}</strong></div>
+          <div style={styles.summaryTotal}><span>Total</span><strong>{formatMoney(total)}</strong></div>
+        </div>
+      </section>
+
+      <section style={styles.checkoutBar}>
+        <div>
+          <strong style={styles.checkoutTitle}>{item.name}</strong>
+          <span style={styles.checkoutMeta}>{RENTAL_PLAN_OPTIONS.find((o) => o.id === plan)?.label} rental</span>
+        </div>
+        <button onClick={handleSubmit} style={styles.primaryAction} disabled={submitting}>
+          {submitting ? "Starting..." : `Pay ${formatMoney(total)}`}
+        </button>
+      </section>
+    </DashboardFrame>
+  );
+}
+
+function RentalOrdersInner() {
+  const { user } = useCustomerUser();
+  const searchParams = useSearchParams();
+  const [orders, setOrders] = useState<RentalOrderSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function load() {
+    if (!user) return;
+    fetchPatientRentalOrders(user.id)
+      .then(setOrders)
+      .catch(() => setOrders([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, [user]);
+
+  async function handleReturn(orderId: string) {
+    setBusyId(orderId);
+    try {
+      await requestRentalReturn(orderId, "pickup");
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unable to request a return.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleCancel(orderId: string) {
+    setBusyId(orderId);
+    try {
+      await cancelRentalOrder(orderId);
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unable to cancel this order.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <DashboardFrame title="Rental Orders" subtitle="Track your equipment rentals from delivery to return.">
+      {searchParams.get("created") === "1" ? <div style={styles.noticeCard}>Your rental order is confirmed. Track delivery status below.</div> : null}
+
+      {loading ? <div style={styles.noticeCard}>Loading your orders...</div> : null}
+
+      {!loading && !orders.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No rental orders yet</h2>
+          <p style={styles.emptyCopy}>Rent wheelchairs, beds, and other patient-care equipment for home recovery.</p>
+          <Link href="/rental-equipment" style={styles.primaryActionLink}>Browse Rental Equipment</Link>
+        </section>
+      ) : (
+        <div style={styles.appointmentGrid}>
+          {orders.map((order) => {
+            const canCancel = ["placed", "accepted"].includes(order.status);
+            const canReturn = ["delivered", "active"].includes(order.status);
+            return (
+              <div key={order.id} className="hover-lift" style={styles.appointmentCard}>
+                <strong>{order.equipmentName}</strong>
+                <span>{order.providerName}</span>
+                <small>{formatBookingStatus(order.plan)} plan · {order.rentalDays} day{order.rentalDays > 1 ? "s" : ""}</small>
+                <p>{formatDate(order.createdAt)}</p>
+                <div style={styles.doctorFooter}>
+                  <span>{formatBookingStatus(order.status)}</span>
+                  <strong>{formatMoney(order.total)}</strong>
+                </div>
+                {canCancel || canReturn ? (
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    {canCancel ? (
+                      <button onClick={() => handleCancel(order.id)} disabled={busyId === order.id} style={styles.secondaryActionLink}>
+                        Cancel
+                      </button>
+                    ) : null}
+                    {canReturn ? (
+                      <button onClick={() => handleReturn(order.id)} disabled={busyId === order.id} style={styles.secondaryActionLink}>
+                        Request Return
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </DashboardFrame>
+  );
+}
+
+export function WebRentalOrdersScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading your orders...</div></div>}>
+      <RentalOrdersInner />
+    </Suspense>
   );
 }
 
@@ -1807,7 +2670,7 @@ export function WebCareStaffScreen() {
 
       <div style={styles.serviceTileGrid}>
         {loading ? null : filtered.map((item) => (
-          <Link key={item.id} href="/care-staff/request" style={styles.infoTileCard}>
+          <Link key={item.id} href="/care-staff/request" className="hover-lift" style={styles.infoTileCard}>
             <MarketplaceImage
               src={item.avatarUrl}
               fallbackSrc={APP_FALLBACK_IMAGES.careTeam}
@@ -2083,7 +2946,7 @@ function StaffingBookingsInner() {
       ) : (
         <div style={styles.appointmentGrid}>
           {bookings.map((booking) => (
-            <div key={booking.id} style={styles.appointmentCard}>
+            <div key={booking.id} className="hover-lift" style={styles.appointmentCard}>
               <strong>{booking.staffType}</strong>
               <span>{booking.numberOfStaff} staff member{booking.numberOfStaff > 1 ? "s" : ""}</span>
               <small>{booking.city} · {formatDateTimeLabel(booking.scheduledDate, booking.scheduledTime)}</small>
@@ -2170,7 +3033,7 @@ export function WebRecordsScreen() {
           ["Consultation Notes", "Review doctor summaries, visit context, and future plan details."],
           ["Insurance Docs", "Keep health cards and supporting paperwork easy to access."],
         ].map(([title, copy]) => (
-          <div key={title} style={styles.infoTileCard}>
+          <div key={title} className="hover-lift" style={styles.infoTileCard}>
             <h3 style={styles.tileTitle}>{title}</h3>
             <p style={styles.tileCopy}>{copy}</p>
           </div>
@@ -2508,6 +3371,7 @@ function PaymentCallbackInner() {
   const searchParams = useSearchParams();
   const { user, state: authState } = useCustomerUser();
   const [state, setState] = useState("Verifying payment...");
+  const [phase, setPhase] = useState<"verifying" | "success" | "error">("verifying");
 
   useEffect(() => {
     if (authState.loading) return;
@@ -2553,12 +3417,21 @@ function PaymentCallbackInner() {
             entityType: "pharmacy_order",
           });
           clearCart();
+        } else if (
+          pending.kind === "lab_booking" ||
+          pending.kind === "hospital_booking" ||
+          pending.kind === "ctmri_booking" ||
+          pending.kind === "rental_order"
+        ) {
+          await fulfillServiceBooking(transaction.transactionId, pending.booking);
         }
 
         clearPendingPayment();
-        setState("Payment verified. Redirecting...");
-        router.replace(pending.returnTo);
+        setPhase("success");
+        setState("Your booking is confirmed. Redirecting you now...");
+        setTimeout(() => router.replace(pending.returnTo), 900);
       } catch (error) {
+        setPhase("error");
         setState(error instanceof Error ? error.message : "Unable to verify payment.");
       }
     };
@@ -2571,10 +3444,26 @@ function PaymentCallbackInner() {
 
   return (
     <div style={styles.authPage}>
-      <div style={styles.callbackPanel}>
-        <h1 style={styles.authHeadline}>Payment Callback</h1>
-        <p style={styles.authCopy}>{state}</p>
-        {getPendingPayment() ? null : <Link href="/" style={styles.primaryActionLink}>Go Home</Link>}
+      <div style={styles.confirmationPanel}>
+        <div
+          style={{
+            ...styles.confirmationIcon,
+            ...(phase === "success" ? styles.confirmationIconSuccess : phase === "error" ? styles.confirmationIconError : {}),
+          }}
+        >
+          {phase === "verifying" ? <span className="skeleton-shimmer" style={styles.confirmationSpinnerDot} /> : phase === "success" ? "✓" : "!"}
+        </div>
+        <h1 style={styles.confirmationTitle}>
+          {phase === "verifying" ? "Confirming your payment" : phase === "success" ? "Booking confirmed" : "We couldn't confirm this payment"}
+        </h1>
+        <p style={styles.confirmationCopy}>{state}</p>
+        {phase === "error" ? (
+          <div style={styles.heroActionRowLight}>
+            <Link href="/support" style={styles.secondaryAction}>Contact Support</Link>
+            <Link href="/" style={styles.primaryAction}>Go Home</Link>
+          </div>
+        ) : null}
+        {phase !== "error" && !getPendingPayment() ? <Link href="/" style={{ ...styles.linkAction, marginTop: 8 }}>Go Home</Link> : null}
       </div>
     </div>
   );
@@ -2595,6 +3484,8 @@ const themeStyles = {
   heroGradient: "linear-gradient(135deg, var(--brand-deep) 0%, var(--brand) 62%, var(--brand-soft) 100%)",
   darkCardGradient: "linear-gradient(145deg, var(--brand-deep) 0%, #1d4f91 54%, var(--brand) 100%)",
   promoGradient: "linear-gradient(160deg, var(--brand-deep), var(--brand))",
+  wideCardGradient:
+    "radial-gradient(circle at 88% -10%, rgba(255,255,255,0.16), transparent 46%), radial-gradient(circle at 8% 120%, rgba(15,138,95,0.28), transparent 42%), linear-gradient(135deg, var(--brand-deep) 0%, var(--brand) 68%, var(--brand-hover) 100%)",
   panel: "var(--surface-strong)",
   panelSoft: "var(--surface)",
   panelAlt: "var(--surface-alt)",
@@ -2730,16 +3621,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: themeStyles.brandDeep,
     marginTop: 6,
+    fontSize: "0.86rem",
+    letterSpacing: "-0.005em",
   },
   fieldInput: {
     width: "100%",
-    minHeight: 56,
-    borderRadius: 10,
-    border: `1px solid ${themeStyles.lineStrong}`,
+    minHeight: 52,
+    borderRadius: "var(--radius-md)",
+    border: `1.5px solid ${themeStyles.lineStrong}`,
     background: themeStyles.panel,
     padding: "0 18px",
-    fontSize: "1rem",
+    fontSize: "0.98rem",
     color: themeStyles.ink,
+    transition: "var(--motion-fast)",
   },
   inlineLinkRow: {
     display: "flex",
@@ -2754,32 +3648,38 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   errorNote: {
-    padding: "12px 14px",
-    borderRadius: 10,
+    padding: "14px 16px",
+    borderRadius: "var(--radius-md)",
     background: themeStyles.dangerSoft,
     color: themeStyles.danger,
     border: `1px solid ${themeStyles.dangerLine}`,
+    fontWeight: 600,
+    fontSize: "0.92rem",
   },
   primaryAction: {
-    minHeight: 54,
-    borderRadius: 10,
+    minHeight: 52,
+    borderRadius: "var(--radius-pill)",
     border: "none",
-    background: themeStyles.brand,
+    background: `linear-gradient(135deg, ${themeStyles.brand}, var(--brand-hover))`,
     color: "var(--surface-strong)",
     fontWeight: 800,
-    fontSize: "1rem",
+    fontSize: "0.98rem",
     cursor: "pointer",
-    padding: "0 18px",
+    padding: "0 26px",
+    boxShadow: "var(--shadow-card)",
+    transition: "var(--motion-fast)",
+    letterSpacing: "-0.005em",
   },
   secondaryAction: {
-    minHeight: 50,
-    borderRadius: 10,
-    border: `1px solid ${themeStyles.lineStrong}`,
+    minHeight: 48,
+    borderRadius: "var(--radius-pill)",
+    border: `1.5px solid ${themeStyles.lineStrong}`,
     background: themeStyles.panel,
     color: themeStyles.brandDeep,
     fontWeight: 700,
     cursor: "pointer",
-    padding: "0 18px",
+    padding: "0 22px",
+    transition: "var(--motion-fast)",
   },
   linkAction: {
     border: "none",
@@ -2819,13 +3719,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   mainScroll: {
     overflowY: "auto",
-    padding: "22px 24px 40px",
+    padding: "32px 32px 56px",
   },
   mainInner: {
-    maxWidth: 1180,
+    maxWidth: 1240,
     margin: "0 auto",
     display: "grid",
-    gap: 18,
+    gap: 26,
+    width: "100%",
   },
   pageHeaderRow: {
     display: "flex",
@@ -2837,21 +3738,21 @@ const styles: Record<string, React.CSSProperties> = {
   pageTitle: {
     margin: 0,
     color: themeStyles.brandDeep,
-    fontSize: "1.7rem",
-    lineHeight: 1.2,
-    letterSpacing: "-0.02em",
+    fontSize: "clamp(1.6rem, 1.35rem + 1vw, 2.15rem)",
+    lineHeight: 1.15,
+    letterSpacing: "-0.025em",
     fontWeight: 800,
   },
   pageSubtitle: {
-    margin: "6px 0 0",
-    maxWidth: 720,
+    margin: "8px 0 0",
+    maxWidth: 640,
     color: themeStyles.inkSoft,
-    lineHeight: 1.55,
-    fontSize: "0.92rem",
+    lineHeight: 1.6,
+    fontSize: "0.96rem",
   },
   mainContent: {
     display: "grid",
-    gap: 16,
+    gap: 22,
   },
   headerPill: {
     display: "inline-flex",
@@ -2868,28 +3769,31 @@ const styles: Record<string, React.CSSProperties> = {
   statRow: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 12,
+    gap: 14,
   },
   statCard: {
     display: "grid",
-    gap: 6,
-    padding: "14px 16px",
-    borderRadius: 12,
+    gap: 8,
+    padding: "18px 20px",
+    borderRadius: "var(--radius-lg)",
     border: `1px solid ${themeStyles.line}`,
     background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+    transition: "var(--motion-fast)",
   },
   statLabel: {
     color: themeStyles.muted,
-    fontSize: "0.76rem",
+    fontSize: "0.74rem",
     fontWeight: 700,
     textTransform: "uppercase",
-    letterSpacing: "0.04em",
+    letterSpacing: "0.06em",
   },
   statValue: {
     color: themeStyles.brandDeep,
-    fontSize: "1.6rem",
+    fontSize: "1.85rem",
     lineHeight: 1,
-    letterSpacing: "-0.02em",
+    letterSpacing: "-0.03em",
+    fontWeight: 700,
   },
   heroGrid: {
     display: "grid",
@@ -2932,54 +3836,60 @@ const styles: Record<string, React.CSSProperties> = {
   },
   heroActionRow: {
     display: "flex",
-    gap: 10,
+    gap: 12,
     flexWrap: "wrap",
-    marginTop: 4,
+    marginTop: 18,
   },
   primaryActionLink: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 38,
-    padding: "0 16px",
-    borderRadius: 8,
+    minHeight: 44,
+    padding: "0 20px",
+    borderRadius: "var(--radius-pill)",
     background: themeStyles.panel,
     color: themeStyles.brandDeep,
-    fontWeight: 700,
-    fontSize: "0.88rem",
+    fontWeight: 800,
+    fontSize: "0.9rem",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.14)",
+    transition: "var(--motion-fast)",
+    letterSpacing: "-0.005em",
   },
   secondaryActionLink: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 38,
-    padding: "0 16px",
-    borderRadius: 8,
-    background: "rgba(255,255,255,0.14)",
+    minHeight: 44,
+    padding: "0 20px",
+    borderRadius: "var(--radius-pill)",
+    background: "rgba(255,255,255,0.12)",
     color: "var(--surface-strong)",
-    border: "1px solid rgba(255,255,255,0.22)",
+    border: "1.5px solid rgba(255,255,255,0.3)",
     fontWeight: 700,
-    fontSize: "0.88rem",
+    fontSize: "0.9rem",
+    transition: "var(--motion-fast)",
   },
   sideFeatureStack: {
     display: "grid",
     gap: 12,
   },
   searchModule: {
-    borderRadius: 12,
+    borderRadius: "var(--radius-lg)",
     background: themeStyles.panel,
-    padding: 16,
+    padding: 18,
     border: `1px solid ${themeStyles.line}`,
+    boxShadow: "var(--shadow-card)",
     display: "grid",
-    gap: 6,
+    gap: 10,
     color: themeStyles.brandDeep,
-    fontSize: "0.88rem",
+    fontSize: "0.92rem",
   },
   tipCard: {
-    borderRadius: 12,
+    borderRadius: "var(--radius-lg)",
     background: themeStyles.panel,
-    padding: 16,
+    padding: 18,
     border: `1px solid ${themeStyles.line}`,
+    boxShadow: "var(--shadow-card)",
     display: "grid",
     gap: 8,
     color: themeStyles.brandDeep,
@@ -2995,24 +3905,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.72rem",
   },
   sectionBlock: {
-    borderRadius: 14,
+    borderRadius: "var(--radius-lg)",
     background: themeStyles.panel,
-    padding: 18,
+    padding: 24,
     border: `1px solid ${themeStyles.line}`,
+    boxShadow: "var(--shadow-card)",
   },
   sectionHead: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 14,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   sectionTitle: {
     margin: 0,
     color: themeStyles.brandDeep,
-    fontSize: "1.15rem",
-    lineHeight: 1.2,
-    letterSpacing: "-0.01em",
+    fontSize: "1.22rem",
+    lineHeight: 1.25,
+    letterSpacing: "-0.015em",
     fontWeight: 800,
   },
   linkActionInline: {
@@ -3022,28 +3933,29 @@ const styles: Record<string, React.CSSProperties> = {
   },
   serviceGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 10,
+    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+    gap: 14,
   },
   serviceCard: {
     display: "grid",
     gap: 8,
-    padding: 14,
-    borderRadius: 10,
+    padding: 18,
+    borderRadius: "var(--radius-md)",
     border: `1px solid ${themeStyles.line}`,
     background: themeStyles.panelSoft,
     fontSize: "0.88rem",
+    transition: "var(--motion-standard)",
   },
   serviceIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: "var(--radius-md)",
     display: "grid",
     placeItems: "center",
     background: themeStyles.brandTint,
     color: themeStyles.brand,
     fontWeight: 900,
-    fontSize: "0.9rem",
+    fontSize: "1.3rem",
   },
   dashboardSplit: {
     display: "grid",
@@ -3151,41 +4063,46 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.74rem",
   },
   heroWideCard: {
-    borderRadius: 14,
-    padding: "18px 22px",
-    background: "linear-gradient(140deg, #233776, #344ea4)",
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: "var(--radius-lg)",
+    padding: "28px 32px",
+    background: themeStyles.wideCardGradient,
     color: "var(--surface-strong)",
+    boxShadow: "var(--shadow-brand)",
   },
   bluePill: {
     display: "inline-flex",
-    padding: "5px 10px",
+    padding: "6px 12px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.16)",
     color: "var(--surface-strong)",
-    fontWeight: 700,
+    fontWeight: 800,
     fontSize: "0.72rem",
     textTransform: "uppercase",
-    letterSpacing: "0.08em",
+    letterSpacing: "0.1em",
+    border: "1px solid rgba(255,255,255,0.22)",
   },
   heroHeadingAlt: {
-    margin: "10px 0 4px",
-    fontSize: "1.4rem",
-    lineHeight: 1.3,
-    letterSpacing: "-0.01em",
+    margin: "14px 0 6px",
+    fontSize: "clamp(1.35rem, 1.15rem + 0.8vw, 1.75rem)",
+    lineHeight: 1.25,
+    letterSpacing: "-0.02em",
     fontWeight: 800,
-    maxWidth: 560,
+    maxWidth: 600,
   },
   heroMetricRow: {
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
-    marginTop: 10,
+    marginTop: 14,
   },
   metricBadge: {
     display: "inline-flex",
-    padding: "6px 12px",
+    padding: "7px 13px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.18)",
     fontWeight: 700,
     fontSize: "0.8rem",
   },
@@ -3208,20 +4125,22 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
   filterChip: {
-    minHeight: 32,
-    padding: "0 12px",
-    borderRadius: 999,
-    border: "1px solid var(--line)",
+    minHeight: 40,
+    padding: "0 16px",
+    borderRadius: "var(--radius-pill)",
+    border: "1.5px solid var(--line)",
     background: "var(--surface-strong)",
     color: "var(--ink-soft)",
     fontWeight: 700,
-    fontSize: "0.82rem",
+    fontSize: "0.86rem",
     cursor: "pointer",
+    transition: "var(--motion-fast)",
   },
   filterChipActive: {
-    background: "var(--brand-tint)",
-    color: "var(--brand)",
-    borderColor: "var(--line-strong)",
+    background: "var(--brand)",
+    color: "var(--surface-strong)",
+    borderColor: "var(--brand)",
+    boxShadow: "var(--shadow-card)",
   },
   doctorGrid: {
     display: "grid",
@@ -3421,26 +4340,31 @@ const styles: Record<string, React.CSSProperties> = {
   },
   checkoutBar: {
     position: "sticky",
-    bottom: 18,
+    bottom: 20,
     zIndex: 2,
-    borderRadius: 10,
-    padding: 14,
-    background: "rgba(255,255,255,0.96)",
+    borderRadius: "var(--radius-lg)",
+    padding: "18px 22px",
+    background: "rgba(255,255,255,0.98)",
+    backdropFilter: "blur(12px)",
     border: "1px solid var(--line)",
-    boxShadow: "0 18px 48px rgba(32,52,109,0.12)",
+    boxShadow: "var(--shadow-floating)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 16,
+    flexWrap: "wrap",
   },
   checkoutTitle: {
     display: "block",
     color: "var(--brand-deep)",
+    fontSize: "1.02rem",
+    fontWeight: 800,
   },
   checkoutMeta: {
     display: "block",
-    marginTop: 6,
+    marginTop: 4,
     color: "var(--ink-soft)",
+    fontSize: "0.88rem",
   },
   twoColumnGrid: {
     display: "grid",
@@ -3487,50 +4411,61 @@ const styles: Record<string, React.CSSProperties> = {
   },
   textArea: {
     width: "100%",
-    minHeight: 150,
-    borderRadius: 10,
-    border: "1px solid var(--line-strong)",
+    minHeight: 130,
+    borderRadius: "var(--radius-md)",
+    border: "1.5px solid var(--line-strong)",
     background: "var(--surface-strong)",
-    padding: 18,
-    fontSize: "1rem",
+    padding: 16,
+    fontSize: "0.95rem",
+    lineHeight: 1.5,
     resize: "vertical",
+    fontFamily: "inherit",
+    transition: "var(--motion-fast)",
   },
   noticeCard: {
-    borderRadius: 10,
-    padding: 16,
+    borderRadius: "var(--radius-md)",
+    padding: "16px 18px",
     background: "var(--brand-tint)",
     color: "var(--brand-deep)",
     border: "1px solid var(--line-strong)",
+    fontSize: "0.92rem",
+    lineHeight: 1.55,
+    fontWeight: 500,
   },
   tabRow: {
     display: "flex",
-    gap: 12,
+    gap: 8,
     flexWrap: "wrap",
+    padding: 4,
+    background: "var(--surface-muted)",
+    borderRadius: "var(--radius-pill)",
+    width: "fit-content",
   },
   tabButton: {
-    minHeight: 48,
-    padding: "0 18px",
-    borderRadius: 10,
-    border: "1px solid var(--line)",
-    background: "var(--surface-strong)",
+    minHeight: 44,
+    padding: "0 20px",
+    borderRadius: "var(--radius-pill)",
+    border: "none",
+    background: "transparent",
     color: "var(--ink-soft)",
-    fontWeight: 800,
+    fontWeight: 700,
+    fontSize: "0.9rem",
     cursor: "pointer",
+    transition: "var(--motion-fast)",
   },
   tabButtonActive: {
-    background: "var(--brand)",
-    color: "var(--surface-strong)",
-    borderColor: "var(--brand)",
+    background: "var(--surface-strong)",
+    color: "var(--brand-deep)",
+    boxShadow: "var(--shadow-card)",
   },
   emptyPanel: {
-    borderRadius: 12,
-    padding: 28,
+    borderRadius: "var(--radius-lg)",
+    padding: "48px 32px",
     background: "var(--surface-strong)",
-    border: "1px solid var(--line)",
-    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
+    border: "1px dashed var(--line-strong)",
     textAlign: "center",
     display: "grid",
-    gap: 12,
+    gap: 10,
     justifyItems: "center",
   },
   emptyTitle: {
@@ -3538,27 +4473,30 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--brand-deep)",
     fontSize: "1.3rem",
     lineHeight: 1.2,
-    letterSpacing: "-0.01em",
+    letterSpacing: "-0.015em",
     fontWeight: 800,
   },
   emptyCopy: {
     margin: 0,
     color: "var(--ink-soft)",
+    maxWidth: "42ch",
+    lineHeight: 1.6,
   },
   appointmentGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 14,
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: 16,
   },
   appointmentCard: {
-    borderRadius: 10,
+    borderRadius: "var(--radius-lg)",
     border: "1px solid var(--line)",
     background: "var(--surface-strong)",
-    padding: 14,
-    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
+    padding: 20,
+    boxShadow: "var(--shadow-card)",
     display: "grid",
     gap: 8,
     color: "var(--brand-deep)",
+    transition: "var(--motion-fast)",
   },
   profileLayout: {
     display: "grid",
@@ -3732,15 +4670,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   summaryPanel: {
-    borderRadius: 12,
-    padding: 18,
+    borderRadius: "var(--radius-lg)",
+    padding: 22,
     background: "var(--surface-strong)",
     border: "1px solid var(--line)",
-    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
+    boxShadow: "var(--shadow-card)",
     display: "grid",
     gap: 14,
     position: "sticky",
-    top: 20,
+    top: 100,
   },
   summaryLine: {
     display: "flex",
@@ -3748,6 +4686,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 12,
     color: "var(--ink-soft)",
+    fontSize: "0.92rem",
   },
   summaryTotal: {
     display: "flex",
@@ -3759,7 +4698,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "1px solid var(--line)",
     color: "var(--brand-deep)",
     fontWeight: 900,
-    fontSize: "1.5rem",
+    fontSize: "1.4rem",
   },
   greenText: {
     color: "var(--success)",
@@ -3796,39 +4735,99 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 18,
     justifyItems: "center",
   },
-  serviceTileGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: 12,
-  },
-  infoTileCard: {
-    borderRadius: 10,
-    padding: 14,
+  confirmationPanel: {
+    width: "100%",
+    maxWidth: 480,
+    borderRadius: "var(--radius-lg)",
+    padding: "44px 36px",
     background: "var(--surface-strong)",
     border: "1px solid var(--line)",
-    boxShadow: "0 1px 3px rgba(15,23,42,0.05)",
+    boxShadow: "var(--shadow-floating)",
+    textAlign: "center",
     display: "grid",
-    gap: 8,
+    gap: 12,
+    justifyItems: "center",
+  },
+  confirmationIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
+    fontSize: "1.6rem",
+    fontWeight: 900,
+    marginBottom: 8,
+  },
+  confirmationIconSuccess: {
+    background: "var(--success-soft)",
+    color: "var(--success)",
+  },
+  confirmationIconError: {
+    background: "var(--danger-soft)",
+    color: "var(--danger)",
+  },
+  confirmationSpinnerDot: {
+    width: 28,
+    height: 28,
+    borderRadius: "50%",
+  },
+  confirmationTitle: {
+    margin: 0,
     color: "var(--brand-deep)",
+    fontSize: "1.4rem",
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+  },
+  confirmationCopy: {
+    margin: 0,
+    color: "var(--ink-soft)",
+    lineHeight: 1.6,
+    fontSize: "0.94rem",
+  },
+  heroActionRowLight: {
+    display: "flex",
+    gap: 10,
+    marginTop: 8,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  serviceTileGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 18,
+  },
+  infoTileCard: {
+    borderRadius: "var(--radius-lg)",
+    padding: 18,
+    background: "var(--surface-strong)",
+    border: "1px solid var(--line)",
+    boxShadow: "var(--shadow-card)",
+    display: "grid",
+    gap: 10,
+    color: "var(--brand-deep)",
+    transition: "var(--motion-standard)",
   },
   tileVisual: {
-    height: 120,
-    borderRadius: 10,
+    height: 132,
+    borderRadius: "var(--radius-md)",
     border: "1px solid var(--line)",
-    background: "var(--surface)",
+    background: "linear-gradient(160deg, var(--brand-tint), var(--surface))",
   },
   staffVisual: {
-    height: 120,
-    borderRadius: 10,
+    height: 132,
+    borderRadius: "var(--radius-md)",
     border: "1px solid var(--line)",
-    background: "#f2f6ff",
+    background: "linear-gradient(160deg, var(--brand-tint), var(--surface))",
   },
   tileTitle: {
     margin: 0,
     color: "var(--brand-deep)",
-    fontSize: "1.18rem",
-    lineHeight: 1.15,
-    letterSpacing: "-0.04em",
+    fontSize: "1.12rem",
+    lineHeight: 1.25,
+    letterSpacing: "-0.02em",
+    fontWeight: 800,
   },
   serviceNameText: {
     color: "var(--brand-deep)",
@@ -3839,7 +4838,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     color: "var(--ink-soft)",
     lineHeight: 1.5,
-    fontSize: "0.92rem",
+    fontSize: "0.9rem",
   },
   tileMetaGrid: {
     display: "flex",
@@ -3848,13 +4847,16 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     flexWrap: "wrap",
     color: "var(--ink-soft)",
+    fontSize: "0.86rem",
   },
   tileFooter: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    marginTop: 4,
+    marginTop: 6,
+    paddingTop: 12,
+    borderTop: "1px solid var(--line)",
     color: "var(--brand-deep)",
   },
   priceStack: {

@@ -264,3 +264,68 @@ export async function linkTransactionToEntity(params: {
   if (error) throw new Error(error.message);
   return data as CustomerTransactionRow;
 }
+
+// ---------------------------------------------------------------------------
+// Server-side authoritative pricing for lab/ctmri/hospital/rental bookings.
+// The browser never supplies the amount for these service types — the price
+// is always re-read from the admin-approved catalog row here, server-side,
+// before a Razorpay order is created.
+// ---------------------------------------------------------------------------
+
+export type BookingRef =
+  | { kind: "lab_booking"; approvalId: string }
+  | { kind: "hospital_booking"; approvalId: string }
+  | { kind: "ctmri_booking"; approvalId: string }
+  | { kind: "rental_order"; approvalId: string; plan: "daily" | "weekly" | "monthly" | "quarterly" };
+
+export type BookingPricing = {
+  amount: number;
+  breakdown: {
+    itemPrice: number;
+    deliveryFee: number;
+    securityDeposit: number;
+  };
+};
+
+const RENTAL_DELIVERY_FEE = 40;
+
+export async function computeBookingPricing(client: SupabaseClient, ref: BookingRef): Promise<BookingPricing> {
+  if (ref.kind === "lab_booking") {
+    const { data, error } = await client.from("lab_test_approvals").select("price,status").eq("id", ref.approvalId).single();
+    if (error || !data || String(data.status) !== "Approved") throw new Error("This lab test is no longer available.");
+    const amount = Number(data.price || 0);
+    return { amount, breakdown: { itemPrice: amount, deliveryFee: 0, securityDeposit: 0 } };
+  }
+
+  if (ref.kind === "hospital_booking") {
+    const { data, error } = await client.from("hospital_service_approvals").select("price,status").eq("id", ref.approvalId).single();
+    if (error || !data || String(data.status) !== "Approved") throw new Error("This hospital service is no longer available.");
+    const amount = Number(data.price || 0);
+    return { amount, breakdown: { itemPrice: amount, deliveryFee: 0, securityDeposit: 0 } };
+  }
+
+  if (ref.kind === "ctmri_booking") {
+    const { data, error } = await client.from("ctmri_service_approvals").select("price,status").eq("id", ref.approvalId).single();
+    if (error || !data || String(data.status) !== "Approved") throw new Error("This imaging service is no longer available.");
+    const amount = Number(data.price || 0);
+    return { amount, breakdown: { itemPrice: amount, deliveryFee: 0, securityDeposit: 0 } };
+  }
+
+  const { data, error } = await client
+    .from("rental_equipment_approvals")
+    .select("price,weekly_price,monthly_price,deposit,status")
+    .eq("id", ref.approvalId)
+    .single();
+  if (error || !data || String(data.status) !== "Approved") throw new Error("This rental equipment is no longer available.");
+
+  const itemPrice =
+    ref.plan === "weekly"
+      ? Number(data.weekly_price || data.price || 0)
+      : ref.plan === "monthly" || ref.plan === "quarterly"
+        ? Number(data.monthly_price || data.price || 0)
+        : Number(data.price || 0);
+  const securityDeposit = Number(data.deposit || 0);
+  const amount = itemPrice + RENTAL_DELIVERY_FEE + securityDeposit;
+
+  return { amount, breakdown: { itemPrice, deliveryFee: RENTAL_DELIVERY_FEE, securityDeposit } };
+}

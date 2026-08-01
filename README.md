@@ -77,6 +77,11 @@ For public browsing, run the updated SQL in [sql/public-browse-policies.sql](/Us
 - Design tokens (colors, typography scale, spacing, radius, shadows, containers, motion) live in `app/globals.css` under `:root`. Change brand colors there, not in individual components — every screen consumes these variables.
 - See `APP_PROCESS_LOG.md`'s "Design System" section for what was and wasn't migrated to the new shell/token system.
 
+## Service booking payments (lab, CT/MRI, hospital, rental)
+
+- `app/api/payments/create-order` accepts an optional `bookingRef` — when present, the server re-derives the price from the admin-approved catalog row (`lab_test_approvals`, `ctmri_service_approvals`, `hospital_service_approvals`, or `rental_equipment_approvals`) via `computeBookingPricing()` in `lib/payment-transactions.ts`, ignoring whatever amount the browser sent. Doctor/pharmacy checkout doesn't send `bookingRef`, so that flow is unaffected.
+- `app/api/service-bookings/fulfill` is a single, idempotent Route Handler that creates the durable booking row (lab/ctmri/hospital/rental) after payment verification. It's safe to call more than once for the same transaction — if already fulfilled, it returns the existing booking instead of creating a duplicate.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
