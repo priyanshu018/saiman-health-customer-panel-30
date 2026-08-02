@@ -6,6 +6,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useCustomerUser } from "@/components/customer-live";
 import { SiteHeader } from "@/components/site-header";
+import {
+  fetchHomeBanners,
+  fetchServiceCardSettings,
+  subscribeHomeBanners,
+  subscribeServiceCardSettings,
+  trackBannerClick,
+  type CmsBannerSummary,
+  type ServiceCardSetting,
+} from "@/lib/customer-site-cms";
 import { subscriptionPlans } from "@/lib/customer-web-data";
 import {
   cancelInstantCallRequest,
@@ -152,6 +161,80 @@ const APP_FALLBACK_IMAGES = {
   pharmacy: "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80",
   careTeam: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=1200&q=80",
 } as const;
+
+type HomeServiceCard = {
+  id: string;
+  title: string;
+  href: string;
+  imageSrc: string;
+  searchTerms: string[];
+};
+
+const HOME_SERVICE_CARDS: HomeServiceCard[] = [
+  {
+    id: "doctor-consult",
+    title: "Doctor Consult",
+    href: "/doctors",
+    imageSrc: "/home-service-doctor.png",
+    searchTerms: ["doctor", "consult", "consultation", "physician"],
+  },
+  {
+    id: "pharmacy",
+    title: "Pharmacy",
+    href: "/pharmacy",
+    imageSrc: "/home-service-pharmacy.png",
+    searchTerms: ["pharmacy", "medicine", "medicines", "tablet"],
+  },
+  {
+    id: "lab-tests",
+    title: "Lab Tests",
+    href: "/lab-tests",
+    imageSrc: "/home-service-lab.png",
+    searchTerms: ["lab", "tests", "blood test", "pathology"],
+  },
+  {
+    id: "ct-mri",
+    title: "CT / MRI",
+    href: "/ct-mri",
+    imageSrc: "/home-service-ctmri.png",
+    searchTerms: ["ct", "mri", "scan", "xray", "ultrasound"],
+  },
+  {
+    id: "ambulance",
+    title: "Ambulance",
+    href: "/ambulance",
+    imageSrc: "/home-service-ambulance.png",
+    searchTerms: ["ambulance", "emergency"],
+  },
+  {
+    id: "rental",
+    title: "Rental Equipment",
+    href: "/rental-equipment",
+    imageSrc: "/home-service-rental.png",
+    searchTerms: ["rental", "equipment", "wheelchair", "hospital bed"],
+  },
+  {
+    id: "hospitals",
+    title: "Hospitals & Surgeries",
+    href: "/hospitals",
+    imageSrc: "/home-service-hospital.png",
+    searchTerms: ["hospital", "hospitals", "surgery", "surgeries"],
+  },
+  {
+    id: "health-card",
+    title: "Health Card",
+    href: "/health-card",
+    imageSrc: "/home-service-health-card.png",
+    searchTerms: ["health card", "membership", "card"],
+  },
+  {
+    id: "staffing",
+    title: "Care Staff",
+    href: "/care-staff",
+    imageSrc: "/home-service-staffing.png",
+    searchTerms: ["care staff", "staffing", "nurse", "caregiver"],
+  },
+];
 
 function toneFromSeed(seed: string) {
   const key = seed.trim().toLowerCase();
@@ -573,6 +656,9 @@ export function WebHomeScreen() {
   const [pharmacyOrders, setPharmacyOrders] = useState(0);
   const [openTickets, setOpenTickets] = useState(0);
   const [homeQuery, setHomeQuery] = useState("");
+  const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
+  const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
+  const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -589,17 +675,64 @@ export function WebHomeScreen() {
       .catch(() => setOpenTickets(0));
   }, [user]);
 
-  const services = [
-    { icon: "🩺", title: "Doctor Consult", detail: "Find specialists, compare fees, and book consultations.", href: "/doctors" },
-    { icon: "💊", title: "Pharmacy", detail: "Browse medicines and check out securely.", href: "/pharmacy" },
-    { icon: "🧪", title: "Lab Tests", detail: "Search tests and compare available labs.", href: "/lab-tests" },
-    { icon: "🩻", title: "CT / MRI", detail: "Compare imaging services with approved centers.", href: "/ct-mri" },
-    { icon: "🚑", title: "Ambulance", detail: "Request emergency pickup and support instantly.", href: "/ambulance" },
-    { icon: "🦽", title: "Rental Equipment", detail: "Browse patient-care equipment available for rent.", href: "/rental-equipment" },
-    { icon: "🏥", title: "Hospitals & Surgeries", detail: "Discover approved hospitals and surgery services.", href: "/hospitals" },
-    { icon: "🪪", title: "Health Card", detail: "Review membership-style plans and document readiness.", href: "/health-card" },
-    { icon: "🧑‍⚕️", title: "Care Staff", detail: "Find nurses, caregivers, and support professionals.", href: "/care-staff" },
-  ];
+  useEffect(() => {
+    let active = true;
+
+    Promise.all([
+      fetchServiceCardSettings().catch(() => [] as ServiceCardSetting[]),
+      fetchHomeBanners("Home Banner").catch(() => [] as CmsBannerSummary[]),
+    ]).then(([settings, banners]) => {
+      if (!active) return;
+      setServiceSettings(settings);
+      setHomeBanners(banners);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => subscribeServiceCardSettings(setServiceSettings), []);
+  useEffect(() => subscribeHomeBanners(setHomeBanners, "Home Banner"), []);
+
+  useEffect(() => {
+    if (homeBanners.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setActiveHomeBannerIndex((current) => (current + 1) % homeBanners.length);
+    }, 4200);
+
+    return () => window.clearInterval(timer);
+  }, [homeBanners.length]);
+
+  const serviceSettingsById = useMemo(
+    () => new Map(serviceSettings.map((setting) => [setting.id, setting])),
+    [serviceSettings],
+  );
+
+  const services = useMemo(
+    () =>
+      HOME_SERVICE_CARDS.map((service) => {
+        const setting = serviceSettingsById.get(service.id);
+        return {
+          ...service,
+          visible: setting?.visible ?? true,
+          restricted: setting?.functional === false,
+        };
+      }).filter((service) => service.visible),
+    [serviceSettingsById],
+  );
+
+  const filteredServices = useMemo(() => {
+    const query = homeQuery.trim().toLowerCase();
+    if (!query) return services;
+    return services.filter((service) =>
+      [service.title, ...service.searchTerms].some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [homeQuery, services]);
+
+  const normalizedHomeBannerIndex = homeBanners.length ? activeHomeBannerIndex % homeBanners.length : 0;
+  const activeBanner = homeBanners[normalizedHomeBannerIndex] ?? null;
+  const primaryServiceHref = services.find((service) => !service.restricted)?.href ?? "/support";
 
   const overviewStats = [
     { label: "Upcoming appointments", value: String(upcomingAppointments), href: "/appointments" },
@@ -611,6 +744,13 @@ export function WebHomeScreen() {
   function handleHomeSearch(event: React.FormEvent) {
     event.preventDefault();
     router.push(homeQuery.trim() ? `/doctors?q=${encodeURIComponent(homeQuery.trim())}` : "/doctors");
+  }
+
+  function handleBannerClick() {
+    if (activeBanner?.id) {
+      void trackBannerClick(activeBanner.id).catch(() => undefined);
+    }
+    router.push(primaryServiceHref);
   }
 
   return (
@@ -628,49 +768,111 @@ export function WebHomeScreen() {
         ))}
       </div>
 
-      <div style={styles.heroGrid}>
-        <section style={styles.heroPanel}>
-          <div style={styles.heroTag}>Saiman Healthcare</div>
-          <h2 style={styles.heroHeading}>Every healthcare service your family needs, in one place.</h2>
-          <p style={styles.heroCopy}>Book trusted doctors, order medicines, schedule diagnostics, and reach emergency support — all from a single, secure account.</p>
-          <div style={styles.heroActionRow}>
-            <Link href="/doctors" style={styles.primaryActionLink}>Book Doctor</Link>
-            <Link href="/pharmacy" style={styles.secondaryActionLink}>Browse Medicines</Link>
-          </div>
-        </section>
+      <form style={styles.mobileHomeSearchCard} onSubmit={handleHomeSearch}>
+        <label style={styles.mobileHomeSearchLabel} htmlFor="home-service-search">
+          Search doctors, tests, medicines, and more
+        </label>
+        <div style={styles.mobileHomeSearchRow}>
+          <input
+            id="home-service-search"
+            style={{ ...styles.fieldInput, ...styles.mobileHomeSearchInput }}
+            value={homeQuery}
+            onChange={(event) => setHomeQuery(event.target.value)}
+            aria-label="Search doctors, tests, or services"
+            placeholder="Search doctors, tests, medicines..."
+          />
+          <button type="submit" style={styles.mobileHomeSearchButton}>
+            Search
+          </button>
+        </div>
+      </form>
 
-        <section style={styles.sideFeatureStack}>
-          <form style={styles.searchModule} onSubmit={handleHomeSearch}>
-            <strong>Search doctors, tests, medicines, and more</strong>
-            <input
-              style={styles.fieldInput}
-              value={homeQuery}
-              onChange={(event) => setHomeQuery(event.target.value)}
-              aria-label="Search doctors, tests, or services"
-              placeholder="Try &quot;Cardiologist&quot; or &quot;Blood test&quot;"
+      <section style={styles.mobileHomeBannerSection}>
+        <button type="button" style={styles.mobileHomeBannerCard} onClick={handleBannerClick}>
+          {activeBanner?.image_url ? (
+            <Image
+              src={activeBanner.image_url}
+              alt={activeBanner.title || "Home banner"}
+              fill
+              sizes="(max-width: 960px) 100vw, 1120px"
+              style={{ objectFit: "cover" }}
             />
-          </form>
-          <div style={styles.tipCard}>
-            <span style={styles.tipTag}>Lab Tests</span>
-            <strong>How to prepare for a lab test</strong>
-            <p>Fast for 8–12 hours before most blood tests, carry a valid photo ID, and bring any previous reports for comparison.</p>
+          ) : null}
+          <div style={styles.mobileHomeBannerOverlay} />
+          <div style={styles.mobileHomeBannerGlow} />
+          <div style={styles.mobileHomeBannerContent}>
+            <span style={styles.mobileHomeBannerTag}>Limited Time</span>
+            <h2 style={styles.mobileHomeBannerTitle}>{activeBanner?.title || "No active banner"}</h2>
+            <p style={styles.mobileHomeBannerCopy}>
+              {activeBanner?.description || "Add an active home banner in admin to show it here."}
+            </p>
+            <div style={styles.mobileHomeBannerAction}>
+              <span>Book Now</span>
+              <span aria-hidden="true">→</span>
+            </div>
           </div>
-        </section>
-      </div>
+        </button>
+        {homeBanners.length > 1 ? (
+          <div style={styles.mobileHomeBannerDots}>
+            {homeBanners.map((banner, index) => (
+              <button
+                key={banner.id}
+                type="button"
+                onClick={() => setActiveHomeBannerIndex(index)}
+                style={{
+                  ...styles.mobileHomeBannerDot,
+                  ...(index === normalizedHomeBannerIndex ? styles.mobileHomeBannerDotActive : {}),
+                }}
+                aria-label={`Show banner ${index + 1}`}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
           <h2 style={styles.sectionTitle}>Our Services</h2>
           <Link href="/support" style={styles.linkActionInline}>Need help?</Link>
         </div>
-        <div style={styles.serviceGrid}>
-          {services.map((service) => (
-            <Link key={service.title} href={service.href} className="hover-lift" style={styles.serviceCard}>
-              <div style={styles.serviceIcon}>{service.icon}</div>
-              <strong>{service.title}</strong>
-              <p>{service.detail}</p>
-            </Link>
-          ))}
+        <div style={styles.mobileHomeServicesShell}>
+          <div style={styles.mobileHomeServicesGrid}>
+            {filteredServices.map((service) =>
+              service.restricted ? (
+                <button key={service.id} type="button" style={styles.mobileHomeServiceCardRestricted}>
+                  <div style={styles.mobileHomeServiceImageWrap}>
+                    <Image
+                      src={service.imageSrc}
+                      alt={service.title}
+                      width={92}
+                      height={92}
+                      style={styles.mobileHomeServiceImage}
+                    />
+                  </div>
+                  <strong style={styles.mobileHomeServiceTitle}>{service.title}</strong>
+                  <span style={styles.mobileHomeServiceBadge}>Restricted</span>
+                </button>
+              ) : (
+                <Link key={service.id} href={service.href} className="hover-lift" style={styles.mobileHomeServiceCard}>
+                  <div style={styles.mobileHomeServiceImageWrap}>
+                    <Image
+                      src={service.imageSrc}
+                      alt={service.title}
+                      width={92}
+                      height={92}
+                      style={styles.mobileHomeServiceImage}
+                    />
+                  </div>
+                  <strong style={styles.mobileHomeServiceTitle}>{service.title}</strong>
+                </Link>
+              ),
+            )}
+          </div>
+          {!filteredServices.length ? (
+            <div style={styles.noticeCard}>
+              No services match this search right now. Try doctor, lab, pharmacy, or ambulance.
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -3799,6 +4001,215 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     letterSpacing: "-0.03em",
     fontWeight: 700,
+  },
+  mobileHomeSearchCard: {
+    display: "grid",
+    gap: 12,
+    padding: "18px 20px",
+    borderRadius: "var(--radius-lg)",
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  mobileHomeSearchLabel: {
+    color: themeStyles.brandDeep,
+    fontSize: "0.92rem",
+    fontWeight: 800,
+  },
+  mobileHomeSearchRow: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: 12,
+  },
+  mobileHomeSearchInput: {
+    minHeight: 54,
+    borderRadius: 18,
+    padding: "0 18px",
+    fontSize: "1rem",
+  },
+  mobileHomeSearchButton: {
+    minHeight: 54,
+    padding: "0 18px",
+    borderRadius: 18,
+    border: "none",
+    background: themeStyles.brand,
+    color: "#fff",
+    fontWeight: 800,
+    fontSize: "0.94rem",
+    cursor: "pointer",
+  },
+  mobileHomeBannerSection: {
+    display: "grid",
+    gap: 12,
+  },
+  mobileHomeBannerCard: {
+    position: "relative",
+    display: "grid",
+    alignItems: "end",
+    minHeight: 300,
+    width: "100%",
+    overflow: "hidden",
+    padding: "28px",
+    border: "none",
+    borderRadius: 28,
+    background: "linear-gradient(135deg, rgba(29, 78, 216, 0.96), rgba(15, 42, 92, 0.98))",
+    boxShadow: "var(--shadow-strong)",
+    cursor: "pointer",
+    textAlign: "left",
+    isolation: "isolate",
+  },
+  mobileHomeBannerOverlay: {
+    position: "absolute",
+    inset: 0,
+    background: "linear-gradient(180deg, rgba(15, 23, 42, 0.18), rgba(15, 23, 42, 0.72))",
+    zIndex: 1,
+  },
+  mobileHomeBannerGlow: {
+    position: "absolute",
+    inset: "auto -80px -100px auto",
+    width: 240,
+    height: 240,
+    borderRadius: "50%",
+    background: "radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%)",
+    zIndex: 1,
+  },
+  mobileHomeBannerContent: {
+    position: "relative",
+    zIndex: 2,
+    display: "grid",
+    gap: 12,
+    maxWidth: 520,
+    color: "#fff",
+  },
+  mobileHomeBannerTag: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    padding: "7px 14px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.18)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    fontSize: "0.72rem",
+    fontWeight: 800,
+  },
+  mobileHomeBannerTitle: {
+    margin: 0,
+    fontSize: "clamp(2rem, 1.6rem + 1vw, 3.25rem)",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+  },
+  mobileHomeBannerCopy: {
+    margin: 0,
+    fontSize: "1rem",
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.92)",
+  },
+  mobileHomeBannerAction: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    width: "fit-content",
+    marginTop: 6,
+    padding: "14px 20px",
+    borderRadius: 999,
+    background: "#fff",
+    color: themeStyles.brand,
+    fontWeight: 900,
+    fontSize: "0.96rem",
+    boxShadow: "0 12px 28px rgba(15, 23, 42, 0.18)",
+  },
+  mobileHomeBannerDots: {
+    display: "flex",
+    justifyContent: "center",
+    gap: 8,
+  },
+  mobileHomeBannerDot: {
+    width: 10,
+    height: 10,
+    padding: 0,
+    borderRadius: "50%",
+    border: "none",
+    background: themeStyles.lineStrong,
+    cursor: "pointer",
+  },
+  mobileHomeBannerDotActive: {
+    background: themeStyles.brand,
+    transform: "scale(1.1)",
+  },
+  mobileHomeServicesShell: {
+    display: "grid",
+    gap: 16,
+    padding: "20px",
+    borderRadius: 28,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  mobileHomeServicesGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: 18,
+  },
+  mobileHomeServiceCard: {
+    display: "grid",
+    justifyItems: "center",
+    gap: 12,
+    padding: "14px 12px 10px",
+    borderRadius: 24,
+    border: `1px solid ${themeStyles.line}`,
+    background: "linear-gradient(180deg, #ffffff 0%, #f7faff 100%)",
+    minHeight: 188,
+    textAlign: "center",
+  },
+  mobileHomeServiceCardRestricted: {
+    display: "grid",
+    justifyItems: "center",
+    gap: 12,
+    padding: "14px 12px 10px",
+    borderRadius: 24,
+    border: `1px solid ${themeStyles.line}`,
+    background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
+    minHeight: 188,
+    textAlign: "center",
+    opacity: 0.72,
+    cursor: "not-allowed",
+  },
+  mobileHomeServiceImageWrap: {
+    display: "grid",
+    placeItems: "center",
+    width: 112,
+    height: 112,
+    borderRadius: 24,
+    background: "linear-gradient(180deg, #ffffff 0%, #eef4ff 100%)",
+    border: `1px solid ${themeStyles.line}`,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+  },
+  mobileHomeServiceImage: {
+    width: 92,
+    height: 92,
+    objectFit: "contain",
+  },
+  mobileHomeServiceTitle: {
+    color: themeStyles.brandDeep,
+    fontSize: "1rem",
+    lineHeight: 1.35,
+    letterSpacing: "-0.02em",
+  },
+  mobileHomeServiceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "var(--warning-soft)",
+    color: "var(--warning)",
+    fontSize: "0.72rem",
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
   },
   heroGrid: {
     display: "grid",

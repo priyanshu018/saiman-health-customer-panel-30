@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CustomerSiteShell } from "@/components/customer-site-shell";
@@ -19,12 +20,19 @@ import {
 import {
   contentToParagraphs,
   defaultLandingContent,
+  fetchHomeBanners,
   fetchPublishedCmsBlogs,
   fetchPublishedCmsPageBySlug,
+  fetchServiceCardSettings,
   parseLandingContent,
+  subscribeHomeBanners,
+  subscribeServiceCardSettings,
+  trackBannerClick,
+  type CmsBannerSummary,
   type CmsBlogSummary,
   type CmsPageSummary,
   type LandingContent,
+  type ServiceCardSetting,
   type ServiceSnapshot,
 } from "@/lib/customer-site-cms";
 import { getSupabaseEnv } from "@/lib/supabase-browser";
@@ -56,6 +64,18 @@ function defaultServices(): ServiceSnapshot {
     staffing: 0,
   };
 }
+
+const LANDING_HOME_SERVICES = [
+  { id: "doctor-consult", title: "Doctor Consult", href: "/doctors", imageSrc: "/home-service-doctor.png" },
+  { id: "pharmacy", title: "Pharmacy", href: "/pharmacy", imageSrc: "/home-service-pharmacy.png" },
+  { id: "lab-tests", title: "Lab Tests", href: "/lab-tests", imageSrc: "/home-service-lab.png" },
+  { id: "ct-mri", title: "CT / MRI", href: "/ct-mri", imageSrc: "/home-service-ctmri.png" },
+  { id: "ambulance", title: "Ambulance", href: "/ambulance", imageSrc: "/home-service-ambulance.png" },
+  { id: "rental", title: "Rental Equipment", href: "/rental-equipment", imageSrc: "/home-service-rental.png" },
+  { id: "hospitals", title: "Hospitals & Surgeries", href: "/hospitals", imageSrc: "/home-service-hospital.png" },
+  { id: "health-card", title: "Health Card", href: "/health-card", imageSrc: "/home-service-health-card.png" },
+  { id: "staffing", title: "Care Staff", href: "/care-staff", imageSrc: "/home-service-staffing.png" },
+] as const;
 
 async function fetchServiceSnapshot(): Promise<ServiceSnapshot> {
   const [doctors, pharmacy, labTests, hospitals, imaging, rental, staffing] = await Promise.allSettled([
@@ -135,6 +155,9 @@ export function CustomerLandingPage() {
   const [aboutPage, setAboutPage] = useState<CmsPageSummary | null>(null);
   const [blogs, setBlogs] = useState<CmsBlogSummary[]>([]);
   const [services, setServices] = useState<ServiceSnapshot>(defaultServices());
+  const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
+  const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
+  const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -144,10 +167,12 @@ export function CustomerLandingPage() {
       fetchPublishedCmsPageBySlug("about-us"),
       fetchPublishedCmsBlogs(3),
       fetchServiceSnapshot(),
+      fetchHomeBanners("Home Banner"),
+      fetchServiceCardSettings(),
     ]).then((results) => {
       if (!active) return;
 
-      const [landingResult, aboutResult, blogResult, serviceResult] = results;
+      const [landingResult, aboutResult, blogResult, serviceResult, bannerResult, settingsResult] = results;
 
       if (landingResult.status === "fulfilled" && landingResult.value?.content) {
         setLanding(parseLandingContent(landingResult.value.content));
@@ -164,6 +189,14 @@ export function CustomerLandingPage() {
       if (serviceResult.status === "fulfilled") {
         setServices(serviceResult.value);
       }
+
+      if (bannerResult.status === "fulfilled") {
+        setHomeBanners(bannerResult.value);
+      }
+
+      if (settingsResult.status === "fulfilled") {
+        setServiceSettings(settingsResult.value);
+      }
     });
 
     return () => {
@@ -171,7 +204,36 @@ export function CustomerLandingPage() {
     };
   }, []);
 
+  useEffect(() => subscribeHomeBanners(setHomeBanners, "Home Banner"), []);
+  useEffect(() => subscribeServiceCardSettings(setServiceSettings), []);
+
+  useEffect(() => {
+    if (homeBanners.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setActiveHomeBannerIndex((current) => (current + 1) % homeBanners.length);
+    }, 4200);
+    return () => window.clearInterval(timer);
+  }, [homeBanners.length]);
+
   const aboutParagraphs = safeParagraphs(aboutPage?.content, [landing.about.description]);
+  const serviceSettingsById = useMemo(
+    () => new Map(serviceSettings.map((setting) => [setting.id, setting])),
+    [serviceSettings],
+  );
+  const landingHomeServices = useMemo(
+    () =>
+      LANDING_HOME_SERVICES.map((service) => {
+        const setting = serviceSettingsById.get(service.id);
+        return {
+          ...service,
+          visible: setting?.visible ?? true,
+          restricted: setting?.functional === false,
+        };
+      }).filter((service) => service.visible),
+    [serviceSettingsById],
+  );
+  const activeBanner = homeBanners.length ? homeBanners[activeHomeBannerIndex % homeBanners.length] : null;
+  const featuredBlog = blogs[0] || null;
   const serviceCards = [
     { title: "Doctor Consultation", count: services.doctors, href: "/doctors", detail: "Verified doctors available for online and clinic consultations." },
     { title: "Pharmacy", count: services.pharmacy, href: "/pharmacy", detail: "Medicines and wellness products with doorstep delivery." },
@@ -183,32 +245,95 @@ export function CustomerLandingPage() {
 
   return (
     <CustomerSiteShell footer={landing.footer}>
-      <section className="landing-hero">
-        <div className="landing-hero-copy">
-          <span className="landing-pill">{landing.hero.eyebrow}</span>
-          <h1>{landing.hero.title}</h1>
-          <p>{landing.hero.description}</p>
-          <div className="landing-action-row">
-            <Link href={landing.hero.primaryAction.href} className="primary-button">
-              {landing.hero.primaryAction.label}
-            </Link>
-            <Link href={landing.hero.secondaryAction.href} className="ghost-button">
-              {landing.hero.secondaryAction.label}
-            </Link>
+      <section className="mobile-home-hero">
+        <article
+          className="mobile-home-banner"
+          onClick={() => {
+            if (activeBanner?.id) {
+              void trackBannerClick(activeBanner.id).catch(() => undefined);
+            }
+          }}
+        >
+          {activeBanner?.image_url ? (
+            <Image
+              src={activeBanner.image_url}
+              alt={activeBanner.title || "Home banner"}
+              fill
+              sizes="(max-width: 980px) 100vw, 760px"
+              style={{ objectFit: "cover" }}
+            />
+          ) : null}
+          <div className="mobile-home-banner-overlay" />
+          <div className="mobile-home-banner-copy">
+            <span className="mobile-home-banner-pill">Limited Time</span>
+            <h1>{activeBanner?.title || "No active banner"}</h1>
+            <p>{activeBanner?.description || "Add an active home banner in admin to show it here."}</p>
+            <div className="mobile-home-banner-action">
+              <Link href="/lab-tests" className="mobile-home-banner-button">
+                Book Now
+              </Link>
+            </div>
           </div>
-          <div className="landing-stat-grid">
-            {landing.hero.stats.map((stat) => (
-              <div key={stat.label} className="landing-stat-card">
-                <strong>{stat.value}</strong>
-                <span>{stat.label}</span>
-              </div>
-            ))}
+          {homeBanners.length > 1 ? (
+            <div className="mobile-home-banner-dots">
+              {homeBanners.map((banner, index) => (
+                <button
+                  key={banner.id}
+                  type="button"
+                  className={index === activeHomeBannerIndex % homeBanners.length ? "mobile-home-banner-dot active" : "mobile-home-banner-dot"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setActiveHomeBannerIndex(index);
+                  }}
+                  aria-label={`Show banner ${index + 1}`}
+                />
+              ))}
+            </div>
+          ) : null}
+        </article>
+
+        <article className="mobile-home-side-card">
+          {featuredBlog?.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={featuredBlog.image_url} alt={featuredBlog.title} className="mobile-home-side-image" />
+          ) : (
+            <div className="mobile-home-side-image mobile-home-side-image-fallback" />
+          )}
+          <span className="mobile-home-side-tag">{featuredBlog?.category || "Health Blog"}</span>
+          <h2>{featuredBlog?.title || "How to prepare for a Lab Test"}</h2>
+          <p>{featuredBlog?.excerpt || "Simple steps to get more accurate lab results before your next test."}</p>
+        </article>
+      </section>
+
+      <section className="mobile-home-services-section">
+        <div className="site-section-head">
+          <div>
+            <p className="site-section-eyebrow">Our Services</p>
           </div>
+          <Link href="/support" className="pill-link">
+            Need help?
+          </Link>
         </div>
 
-        <div className="landing-hero-visual">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={landing.hero.imageUrl} alt="Saiman Healthcare landing" />
+        <div className="mobile-home-services-grid">
+          {landingHomeServices.map((service) =>
+            service.restricted ? (
+              <div key={service.id} className="mobile-home-service-card restricted">
+                <div className="mobile-home-service-icon-wrap">
+                  <Image src={service.imageSrc} alt={service.title} width={92} height={92} className="mobile-home-service-icon" />
+                </div>
+                <strong>{service.title}</strong>
+                <span className="mobile-home-service-badge">Restricted</span>
+              </div>
+            ) : (
+              <Link key={service.id} href={service.href} className="mobile-home-service-card">
+                <div className="mobile-home-service-icon-wrap">
+                  <Image src={service.imageSrc} alt={service.title} width={92} height={92} className="mobile-home-service-icon" />
+                </div>
+                <strong>{service.title}</strong>
+              </Link>
+            ),
+          )}
         </div>
       </section>
 
@@ -233,29 +358,6 @@ export function CustomerLandingPage() {
         <div className="site-photo-card">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={landing.about.imageUrl} alt="About Saiman Healthcare" />
-        </div>
-      </section>
-
-      <section id="services" className="site-section-card">
-        <div className="site-section-head">
-          <div>
-            <p className="site-section-eyebrow">Services @ Home</p>
-            <h2>Everything your family needs, verified and ready to book.</h2>
-          </div>
-          <Link href="/support" className="pill-link">
-            Need help choosing?
-          </Link>
-        </div>
-
-        <div className="landing-service-grid">
-          {serviceCards.map((service) => (
-            <Link key={service.title} href={service.href} className="landing-service-card">
-              <span className="landing-service-count">{service.count || "Live"}</span>
-              <strong>{service.title}</strong>
-              <p>{service.detail}</p>
-              <small>Explore service</small>
-            </Link>
-          ))}
         </div>
       </section>
 

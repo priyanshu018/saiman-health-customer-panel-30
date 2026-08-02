@@ -23,6 +23,24 @@ export type CmsBlogSummary = {
   created_at: string;
 };
 
+export type CmsBannerSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  platforms: string[] | null;
+  position: string | null;
+  status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  image_url: string | null;
+};
+
+export type ServiceCardSetting = {
+  id: string;
+  visible: boolean;
+  functional: boolean;
+};
+
 export type SiteStat = {
   label: string;
   value: string;
@@ -82,6 +100,28 @@ export type ServiceSnapshot = {
   staffing: number;
 };
 
+export const SERVICE_CARDS_SETTING_KEY = "service_cards";
+
+export const DEFAULT_SERVICE_CARD_SETTINGS: ServiceCardSetting[] = [
+  { id: "doctor-consult", visible: true, functional: true },
+  { id: "staffing", visible: true, functional: true },
+  { id: "pharmacy", visible: true, functional: true },
+  { id: "lab-tests", visible: true, functional: true },
+  { id: "ct-mri", visible: true, functional: true },
+  { id: "ambulance", visible: true, functional: true },
+  { id: "rental", visible: true, functional: true },
+  { id: "hospitals", visible: true, functional: true },
+  { id: "health-card", visible: true, functional: true },
+];
+
+const WEB_BANNER_PLATFORMS = [
+  "Patient App",
+  "Patient Web",
+  "Customer Web",
+  "Customer Panel",
+  "Web App",
+];
+
 export const defaultLandingContent: LandingContent = {
   hero: {
     eyebrow: "Saiman Healthcare",
@@ -139,6 +179,43 @@ function text(value: unknown, fallback = "") {
 function toStringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function isLiveWindow(item: Pick<CmsBannerSummary, "start_date" | "end_date">) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = item.start_date ? new Date(item.start_date) : null;
+  const end = item.end_date ? new Date(item.end_date) : null;
+
+  if (start && start > today) return false;
+  if (end && end < today) return false;
+  return true;
+}
+
+function normalizeServiceCardSetting(row: Partial<ServiceCardSetting> | undefined, fallback: ServiceCardSetting) {
+  return {
+    id: fallback.id,
+    visible: typeof row?.visible === "boolean" ? row.visible : fallback.visible,
+    functional: typeof row?.functional === "boolean" ? row.functional : fallback.functional,
+  };
+}
+
+export function normalizeServiceCardSettings(value: unknown) {
+  const rows = Array.isArray(value)
+    ? value
+    : typeof value === "object" && value !== null && Array.isArray((value as { services?: unknown }).services)
+      ? (value as { services: unknown[] }).services
+      : [];
+
+  const byId = new Map(
+    rows.map((row) => {
+      const item = row as Partial<ServiceCardSetting>;
+      return [String(item.id || ""), item];
+    }),
+  );
+
+  return DEFAULT_SERVICE_CARD_SETTINGS.map((fallback) => normalizeServiceCardSetting(byId.get(fallback.id), fallback));
 }
 
 function toAction(value: unknown, fallback: SiteAction): SiteAction {
@@ -266,4 +343,79 @@ export async function fetchPublishedCmsBlogs(limit?: number) {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as CmsBlogSummary[];
+}
+
+export async function fetchHomeBanners(position = "Home Banner") {
+  const { data, error } = await client()
+    .from("banners")
+    .select("id,title,description,platforms,position,status,start_date,end_date,image_url,created_at")
+    .eq("status", "Active")
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as CmsBannerSummary[])
+    .filter((banner) => !position || banner.position === position)
+    .filter((banner) => !banner.platforms?.length || banner.platforms.some((platform) => WEB_BANNER_PLATFORMS.includes(platform)))
+    .filter(isLiveWindow);
+}
+
+export async function trackBannerClick(id: string) {
+  const { error } = await client().rpc("increment_banner_clicks", { banner_id: id });
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchServiceCardSettings() {
+  const { data, error } = await client()
+    .from("app_settings")
+    .select("value")
+    .eq("key", SERVICE_CARDS_SETTING_KEY)
+    .maybeSingle();
+
+  if (error) return DEFAULT_SERVICE_CARD_SETTINGS;
+  return normalizeServiceCardSettings(data?.value);
+}
+
+export function subscribeHomeBanners(listener: (banners: CmsBannerSummary[]) => void, position = "Home Banner") {
+  let active = true;
+
+  const load = () => {
+    fetchHomeBanners(position)
+      .then((banners) => {
+        if (active) listener(banners);
+      })
+      .catch(() => {
+        if (active) listener([]);
+      });
+  };
+
+  load();
+
+  const channel = client()
+    .channel(`customer-home-banners-${position}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "banners" }, load)
+    .subscribe();
+
+  return () => {
+    active = false;
+    void client().removeChannel(channel);
+  };
+}
+
+export function subscribeServiceCardSettings(listener: (settings: ServiceCardSetting[]) => void) {
+  const channel = client()
+    .channel(`customer-service-cards-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "app_settings", filter: `key=eq.${SERVICE_CARDS_SETTING_KEY}` },
+      (payload) => {
+        const row = (payload.new || payload.old) as { value?: unknown } | null;
+        listener(normalizeServiceCardSettings(row?.value));
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void client().removeChannel(channel);
+  };
 }
