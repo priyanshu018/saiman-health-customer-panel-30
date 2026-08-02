@@ -7,13 +7,6 @@ import { CustomerSiteShell } from "@/components/customer-site-shell";
 import { useCustomerUser } from "@/components/customer-live";
 import {
   createSupportTicket,
-  fetchApprovedCtmriServices,
-  fetchApprovedDoctors,
-  fetchApprovedHospitalServices,
-  fetchApprovedLabTests,
-  fetchApprovedPharmacyProducts,
-  fetchApprovedRentalEquipment,
-  fetchApprovedStaffingProviders,
   fetchSupportTickets,
   type SupportTicketSummary,
 } from "@/lib/customer-web-live";
@@ -26,6 +19,8 @@ import {
   fetchServiceCardSettings,
   parseLandingContent,
   subscribeHomeBanners,
+  subscribePublishedCmsBlogs,
+  subscribePublishedCmsPageBySlug,
   subscribeServiceCardSettings,
   trackBannerClick,
   type CmsBannerSummary,
@@ -33,7 +28,6 @@ import {
   type CmsPageSummary,
   type LandingContent,
   type ServiceCardSetting,
-  type ServiceSnapshot,
 } from "@/lib/customer-site-cms";
 import { getSupabaseEnv } from "@/lib/supabase-browser";
 
@@ -53,18 +47,6 @@ function safeParagraphs(content: string | null | undefined, fallback: string[]) 
   return blocks.length ? blocks : fallback;
 }
 
-function defaultServices(): ServiceSnapshot {
-  return {
-    doctors: 0,
-    pharmacy: 0,
-    labTests: 0,
-    hospitals: 0,
-    imaging: 0,
-    rental: 0,
-    staffing: 0,
-  };
-}
-
 const LANDING_HOME_SERVICES = [
   { id: "doctor-consult", title: "Doctor Consult", href: "/doctors", imageSrc: "/home-service-doctor.png" },
   { id: "pharmacy", title: "Pharmacy", href: "/pharmacy", imageSrc: "/home-service-pharmacy.png" },
@@ -76,28 +58,6 @@ const LANDING_HOME_SERVICES = [
   { id: "health-card", title: "Health Card", href: "/health-card", imageSrc: "/home-service-health-card.png" },
   { id: "staffing", title: "Care Staff", href: "/care-staff", imageSrc: "/home-service-staffing.png" },
 ] as const;
-
-async function fetchServiceSnapshot(): Promise<ServiceSnapshot> {
-  const [doctors, pharmacy, labTests, hospitals, imaging, rental, staffing] = await Promise.allSettled([
-    fetchApprovedDoctors(),
-    fetchApprovedPharmacyProducts(),
-    fetchApprovedLabTests(),
-    fetchApprovedHospitalServices(),
-    fetchApprovedCtmriServices(),
-    fetchApprovedRentalEquipment(),
-    fetchApprovedStaffingProviders(),
-  ]);
-
-  return {
-    doctors: doctors.status === "fulfilled" ? doctors.value.length : 0,
-    pharmacy: pharmacy.status === "fulfilled" ? pharmacy.value.length : 0,
-    labTests: labTests.status === "fulfilled" ? labTests.value.length : 0,
-    hospitals: hospitals.status === "fulfilled" ? hospitals.value.length : 0,
-    imaging: imaging.status === "fulfilled" ? imaging.value.length : 0,
-    rental: rental.status === "fulfilled" ? rental.value.length : 0,
-    staffing: staffing.status === "fulfilled" ? staffing.value.length : 0,
-  };
-}
 
 function SitePageIntro({
   eyebrow,
@@ -154,7 +114,6 @@ export function CustomerLandingPage() {
   const [landing, setLanding] = useState<LandingContent>(defaultLandingContent);
   const [aboutPage, setAboutPage] = useState<CmsPageSummary | null>(null);
   const [blogs, setBlogs] = useState<CmsBlogSummary[]>([]);
-  const [services, setServices] = useState<ServiceSnapshot>(defaultServices());
   const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
   const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
   const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
@@ -166,13 +125,12 @@ export function CustomerLandingPage() {
       fetchPublishedCmsPageBySlug("home-landing"),
       fetchPublishedCmsPageBySlug("about-us"),
       fetchPublishedCmsBlogs(3),
-      fetchServiceSnapshot(),
       fetchHomeBanners("Home Banner"),
       fetchServiceCardSettings(),
     ]).then((results) => {
       if (!active) return;
 
-      const [landingResult, aboutResult, blogResult, serviceResult, bannerResult, settingsResult] = results;
+      const [landingResult, aboutResult, blogResult, bannerResult, settingsResult] = results;
 
       if (landingResult.status === "fulfilled" && landingResult.value?.content) {
         setLanding(parseLandingContent(landingResult.value.content));
@@ -184,10 +142,6 @@ export function CustomerLandingPage() {
 
       if (blogResult.status === "fulfilled") {
         setBlogs(blogResult.value);
-      }
-
-      if (serviceResult.status === "fulfilled") {
-        setServices(serviceResult.value);
       }
 
       if (bannerResult.status === "fulfilled") {
@@ -205,6 +159,17 @@ export function CustomerLandingPage() {
   }, []);
 
   useEffect(() => subscribeHomeBanners(setHomeBanners, "Home Banner"), []);
+  useEffect(
+    () =>
+      subscribePublishedCmsPageBySlug("home-landing", (page) => {
+        if (page?.content) {
+          setLanding(parseLandingContent(page.content));
+        }
+      }),
+    [],
+  );
+  useEffect(() => subscribePublishedCmsPageBySlug("about-us", setAboutPage), []);
+  useEffect(() => subscribePublishedCmsBlogs(setBlogs, 3), []);
   useEffect(() => subscribeServiceCardSettings(setServiceSettings), []);
 
   useEffect(() => {
@@ -234,14 +199,6 @@ export function CustomerLandingPage() {
   );
   const activeBanner = homeBanners.length ? homeBanners[activeHomeBannerIndex % homeBanners.length] : null;
   const featuredBlog = blogs[0] || null;
-  const serviceCards = [
-    { title: "Doctor Consultation", count: services.doctors, href: "/doctors", detail: "Verified doctors available for online and clinic consultations." },
-    { title: "Pharmacy", count: services.pharmacy, href: "/pharmacy", detail: "Medicines and wellness products with doorstep delivery." },
-    { title: "Lab Tests", count: services.labTests, href: "/lab-tests", detail: "Diagnostics with home collection or center visits." },
-    { title: "Hospital Services", count: services.hospitals, href: "/hospitals", detail: "Verified hospitals and surgery centers near you." },
-    { title: "Imaging", count: services.imaging, href: "/ct-mri", detail: "CT and MRI scans at verified diagnostic centers." },
-    { title: "Care Staff & Equipment", count: services.staffing + services.rental, href: "/care-staff", detail: "Nursing, attendants, and recovery equipment support." },
-  ];
 
   return (
     <CustomerSiteShell footer={landing.footer}>

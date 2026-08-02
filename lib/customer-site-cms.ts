@@ -345,6 +345,64 @@ export async function fetchPublishedCmsBlogs(limit?: number) {
   return (data ?? []) as CmsBlogSummary[];
 }
 
+export function subscribePublishedCmsPageBySlug(
+  slug: string,
+  listener: (page: CmsPageSummary | null) => void,
+) {
+  let active = true;
+
+  const load = () => {
+    fetchPublishedCmsPageBySlug(slug)
+      .then((page) => {
+        if (active) listener(page);
+      })
+      .catch(() => {
+        if (active) listener(null);
+      });
+  };
+
+  load();
+
+  const channel = client()
+    .channel(`customer-cms-page-${slug}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "cms_pages", filter: `slug=eq.${slug}` }, load)
+    .subscribe();
+
+  return () => {
+    active = false;
+    void client().removeChannel(channel);
+  };
+}
+
+export function subscribePublishedCmsBlogs(
+  listener: (blogs: CmsBlogSummary[]) => void,
+  limit?: number,
+) {
+  let active = true;
+
+  const load = () => {
+    fetchPublishedCmsBlogs(limit)
+      .then((blogs) => {
+        if (active) listener(blogs);
+      })
+      .catch(() => {
+        if (active) listener([]);
+      });
+  };
+
+  load();
+
+  const channel = client()
+    .channel(`customer-cms-blogs-${limit ?? "all"}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "cms_blogs" }, load)
+    .subscribe();
+
+  return () => {
+    active = false;
+    void client().removeChannel(channel);
+  };
+}
+
 export async function fetchHomeBanners(position = "Home Banner") {
   const { data, error } = await client()
     .from("banners")
