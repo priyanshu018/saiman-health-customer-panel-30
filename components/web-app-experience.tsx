@@ -1998,11 +1998,165 @@ export function WebPharmacyScreen() {
   );
 }
 
+type WebLabGroupedTest = {
+  groupKey: string;
+  name: string;
+  category: string;
+  providerCount: number;
+  minPrice: number;
+  imageUrl: string | null;
+  reportTime: string;
+  providers: LabTestSummary[];
+};
+
+type WebLabCategoryCard = {
+  id: string;
+  label: string;
+  icon: string;
+  count: number;
+};
+
+type WebLabProviderAggregate = {
+  providerKey: string;
+  labId: string;
+  labName: string;
+  city: string;
+  address: string;
+  total: number;
+  homeCollection: boolean;
+  nablAccredited: boolean;
+  reportTime: string;
+  tests: Array<{
+    providerTestId: string;
+    groupKey: string;
+    name: string;
+    price: number;
+  }>;
+};
+
+const WEB_LAB_CATEGORY_ICON_MAP: Record<string, string> = {
+  popular: "⭐",
+  all: "▦",
+  blood: "🩸",
+  diabetes: "🍬",
+  heart: "❤️",
+  vitamin: "🧪",
+  thyroid: "🦋",
+  liver: "🧫",
+  kidney: "💧",
+  full: "📋",
+  health: "💓",
+  profile: "📈",
+};
+
+function slugifyValue(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "item";
+}
+
+function labGroupKey(test: LabTestSummary) {
+  return `${slugifyValue(test.name)}::${slugifyValue(test.category)}`;
+}
+
+function groupLabTestsForWeb(tests: LabTestSummary[]) {
+  const grouped = new Map<string, WebLabGroupedTest>();
+
+  for (const test of tests) {
+    const key = labGroupKey(test);
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        groupKey: key,
+        name: test.name,
+        category: test.category,
+        providerCount: 1,
+        minPrice: test.price,
+        imageUrl: test.imageUrl,
+        reportTime: test.reportTime,
+        providers: [test],
+      });
+      continue;
+    }
+
+    existing.providers.push(test);
+    existing.providerCount = existing.providers.length;
+    if (test.price < existing.minPrice || existing.minPrice === 0) existing.minPrice = test.price;
+    if (!existing.imageUrl && test.imageUrl) existing.imageUrl = test.imageUrl;
+    if (!existing.reportTime || test.reportTime.length < existing.reportTime.length) existing.reportTime = test.reportTime;
+  }
+
+  return Array.from(grouped.values()).sort(
+    (a, b) => b.providerCount - a.providerCount || a.minPrice - b.minPrice || a.name.localeCompare(b.name),
+  );
+}
+
+function labCategoryIcon(category: string) {
+  const normalized = category.trim().toLowerCase();
+  const matchedKey = Object.keys(WEB_LAB_CATEGORY_ICON_MAP).find((key) => normalized.includes(key));
+  return WEB_LAB_CATEGORY_ICON_MAP[matchedKey || normalized] || "🧪";
+}
+
+function aggregateLabProviders(groups: WebLabGroupedTest[]) {
+  const providerMap = new Map<string, WebLabProviderAggregate>();
+
+  for (const group of groups) {
+    for (const provider of group.providers) {
+      const providerKey = provider.labId || `${provider.labName}::${provider.city}`;
+      const current = providerMap.get(providerKey);
+      if (!current) {
+        providerMap.set(providerKey, {
+          providerKey,
+          labId: provider.labId,
+          labName: provider.labName,
+          city: provider.city,
+          address: provider.labAddress,
+          total: provider.price,
+          homeCollection: provider.homeCollection,
+          nablAccredited: provider.nablAccredited,
+          reportTime: provider.reportTime,
+          tests: [{
+            providerTestId: provider.id,
+            groupKey: group.groupKey,
+            name: group.name,
+            price: provider.price,
+          }],
+        });
+        continue;
+      }
+
+      current.total += provider.price;
+      current.homeCollection = current.homeCollection || provider.homeCollection;
+      current.nablAccredited = current.nablAccredited || provider.nablAccredited;
+      current.tests.push({
+        providerTestId: provider.id,
+        groupKey: group.groupKey,
+        name: group.name,
+        price: provider.price,
+      });
+      if (!current.address && provider.labAddress) current.address = provider.labAddress;
+      if (!current.reportTime || provider.reportTime.length < current.reportTime.length) current.reportTime = provider.reportTime;
+    }
+  }
+
+  return Array.from(providerMap.values()).map((provider) => ({
+    ...provider,
+    total: Number(provider.total.toFixed(2)),
+    tests: provider.tests.sort((a, b) => a.name.localeCompare(b.name)),
+  }));
+}
+
 export function WebLabTestsScreen() {
   const [tests, setTests] = useState<LabTestSummary[]>([]);
+  const [labBanners, setLabBanners] = useState<CmsBannerSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("popular");
+  const [selectedTests, setSelectedTests] = useState<string[]>([]);
+  const [activeLabBannerIndex, setActiveLabBannerIndex] = useState(0);
+  const router = useRouter();
 
   useEffect(() => {
     fetchApprovedLabTests()
@@ -2011,31 +2165,124 @@ export function WebLabTestsScreen() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    fetchHomeBanners("Lab Banner")
+      .then((items) => {
+        if (active) setLabBanners(items);
+      })
+      .catch(() => {
+        if (active) setLabBanners([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => subscribeHomeBanners(setLabBanners, "Lab Banner"), []);
+
+  useEffect(() => {
+    if (labBanners.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setActiveLabBannerIndex((current) => (current + 1) % labBanners.length);
+    }, 4500);
+    return () => window.clearInterval(timer);
+  }, [labBanners.length]);
+
+  const groupedTests = useMemo(() => groupLabTestsForWeb(tests), [tests]);
+
+  const popularTests = useMemo(() => groupedTests.slice(0, 4), [groupedTests]);
+
+  const categoryCards = useMemo<WebLabCategoryCard[]>(() => {
+    const categoryCounts = new Map<string, number>();
+    for (const test of groupedTests) {
+      categoryCounts.set(test.category, (categoryCounts.get(test.category) || 0) + 1);
+    }
+
+    const categories = Array.from(categoryCounts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([label, count]) => ({
+        id: slugifyValue(label),
+        label,
+        icon: labCategoryIcon(label),
+        count,
+      }));
+
+    return [
+      { id: "popular", label: "Popular", icon: "⭐", count: popularTests.length },
+      ...categories,
+      { id: "all", label: "All", icon: "▦", count: groupedTests.length },
+    ];
+  }, [groupedTests, popularTests.length]);
+
   const filtered = useMemo(
     () =>
-      tests.filter((test) => {
-        const haystack = `${test.name} ${test.category} ${test.labName} ${test.city}`.toLowerCase();
+      groupedTests.filter((test) => {
+        const haystack = `${test.name} ${test.category} ${test.providers.map((item) => `${item.labName} ${item.city}`).join(" ")}`.toLowerCase();
         return haystack.includes(query.toLowerCase());
       }),
-    [tests, query],
+    [groupedTests, query],
   );
+
+  const activeTests = useMemo(() => {
+    if (query.trim()) return filtered;
+    if (activeCategory === "popular") return popularTests;
+    if (activeCategory === "all") return groupedTests;
+
+    const activeLabel = categoryCards.find((item) => item.id === activeCategory)?.label;
+    return groupedTests.filter((test) => test.category === activeLabel);
+  }, [activeCategory, categoryCards, filtered, groupedTests, popularTests, query]);
+
+  const normalizedLabBannerIndex = labBanners.length ? activeLabBannerIndex % labBanners.length : 0;
+  const activeLabBanner = labBanners[normalizedLabBannerIndex] ?? null;
+
+  function toggleSelectedTest(groupKey: string) {
+    setSelectedTests((current) => (
+      current.includes(groupKey)
+        ? current.filter((item) => item !== groupKey)
+        : [...current, groupKey]
+    ));
+  }
+
+  function handleCompare() {
+    if (!selectedTests.length) return;
+    router.push(`/lab-tests/compare?tests=${encodeURIComponent(selectedTests.join(","))}`);
+  }
+
+  function handleLabBannerClick() {
+    if (activeLabBanner?.id) {
+      void trackBannerClick(activeLabBanner.id).catch(() => undefined);
+    }
+  }
 
   return (
     <DashboardFrame title="Lab Tests" subtitle="Search diagnostic tests, compare lab prices, and choose home collection or a center visit.">
-      <section style={styles.heroWideCard}>
-        <span style={styles.bluePill}>Lab Tests</span>
-        <h2 style={styles.heroHeadingAlt}>Trusted diagnostics with clear pricing and faster reports.</h2>
-        <p style={styles.heroCopy}>Browse verified lab tests, review report turnaround times, and compare pricing across labs near you.</p>
+      <section style={styles.sectionBlock}>
+        <div style={styles.labSearchShell}>
+          <input
+            style={{ ...styles.searchInput, ...styles.labSearchInput }}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search tests, packages, or lab names"
+            placeholder="Search for tests, packages, or labs..."
+          />
+          <Link href="/support" className="hover-lift" style={styles.labUploadChip}>
+            <span style={styles.labUploadChipIcon}>📷</span>
+            <span>Upload Prescription</span>
+          </Link>
+        </div>
       </section>
 
-      <section style={styles.sectionBlock}>
-        <input
-          style={styles.searchInput}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Search tests, categories, or lab names"
-          placeholder="Search tests, categories, or lab names..."
-        />
+      <section style={styles.labHeroCard}>
+        <button type="button" onClick={handleLabBannerClick} style={styles.labHeroButton}>
+          <span style={styles.labHeroBadge}>{activeLabBanner?.position || "Lab Banner"}</span>
+          <h2 style={styles.labHeroTitle}>{activeLabBanner?.title || "Transparent pricing and home collection."}</h2>
+          <p style={styles.labHeroCopy}>
+            {activeLabBanner?.description || "Publish Lab Banner in Super Admin CMS to control this space."}
+          </p>
+        </button>
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
@@ -2043,32 +2290,322 @@ export function WebLabTestsScreen() {
         <div style={styles.noticeCard}>{loadError ? "Unable to load lab tests right now. Please refresh the page." : "No approved lab tests available yet."}</div>
       ) : null}
 
-      <div style={styles.serviceTileGrid}>
-        {loading ? null : filtered.map((test) => (
-          <Link key={test.id} href={`/lab-tests/${test.id}`} className="hover-lift" style={styles.infoTileCard}>
-            <MarketplaceImage
-              src={test.imageUrl}
-              fallbackSrc={APP_FALLBACK_IMAGES.lab}
-              alt={test.name}
-              label={getInitials(test.name)}
-              style={styles.tileVisual}
-              textStyle={styles.visualInitials}
-            />
-            <span style={styles.blogTag}>{test.category}</span>
-            <h3 style={styles.tileTitle}>{test.name}</h3>
-            <p style={styles.tileCopy}>{test.labName}</p>
-            <div style={styles.tileMetaGrid}>
-              <span>{test.city}</span>
-              <span>{test.reportTime}</span>
+      {loading ? null : (
+        <>
+          <section style={styles.sectionBlock}>
+            <div style={styles.labCategoryGrid}>
+              {categoryCards.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className="hover-lift"
+                  onClick={() => setActiveCategory(category.id)}
+                  style={{ ...styles.labCategoryCard, ...(activeCategory === category.id ? styles.labCategoryCardActive : {}) }}
+                >
+                  <span style={{ ...styles.labCategoryIconBox, ...(activeCategory === category.id ? styles.labCategoryIconBoxActive : {}) }}>
+                    {category.icon}
+                  </span>
+                  <strong style={{ ...styles.labCategoryTitle, ...(activeCategory === category.id ? styles.labCategoryTitleActive : {}) }}>
+                    {category.label}
+                  </strong>
+                  <span style={{ ...styles.labCategoryCount, ...(activeCategory === category.id ? styles.labCategoryTitleActive : {}) }}>
+                    {category.count}
+                  </span>
+                </button>
+              ))}
             </div>
-            <div style={styles.tileFooter}>
-              <strong>{test.price > 0 ? formatMoney(test.price) : "Fee on request"}</strong>
-              <span style={styles.availableLabel}>Book test</span>
+          </section>
+
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Popular Tests</h2>
+              <button type="button" onClick={() => setActiveCategory("all")} style={styles.linkButtonInline}>View All</button>
             </div>
-          </Link>
-        ))}
-      </div>
+            <div style={styles.labCompareTip}>
+              <span style={styles.labCompareTipIcon}>▣</span>
+              <span>Tap tests below to add them to comparison</span>
+            </div>
+            <div style={styles.labTestGrid}>
+              {activeTests.map((test) => {
+                const selected = selectedTests.includes(test.groupKey);
+                return (
+                  <div
+                    key={test.groupKey}
+                    className="hover-lift"
+                    style={{ ...styles.labTestCard, ...(selected ? styles.labTestCardSelected : {}) }}
+                  >
+                    <button type="button" onClick={() => router.push(`/lab-tests/${test.providers[0]?.id}`)} style={styles.labTestCardTapArea}>
+                      <div style={styles.labTestIconBox}>{labCategoryIcon(test.category)}</div>
+                      <h3 style={styles.labTestCardTitle}>{test.name}</h3>
+                      <p style={styles.labTestCardSub}>{test.category.toUpperCase()}</p>
+                      <p style={styles.labTestCardMeta}>{test.providerCount} provider{test.providerCount === 1 ? "" : "s"} included</p>
+                      <p style={styles.labTestCardReport}>Earliest reports in {test.reportTime}</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleSelectedTest(test.groupKey)}
+                      style={{ ...styles.labAddButton, ...(selected ? styles.labAddButtonActive : {}) }}
+                    >
+                      <span>{selected ? "✓" : "🛒"}</span>
+                      <span>{selected ? "ADDED" : "ADD TO CART"}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      )}
+
+      {selectedTests.length ? <div style={{ height: 164 }} aria-hidden="true" /> : null}
+
+      {selectedTests.length ? (
+        <div style={styles.labCompareBar}>
+          <div style={styles.labCompareBarIconWrap}>
+            <span style={styles.labCompareBarIcon}>🛒</span>
+            <span style={styles.labCompareBarBadge}>{selectedTests.length}</span>
+          </div>
+          <div style={styles.labCompareBarCopy}>
+            <strong style={styles.labCompareBarTitle}>{selectedTests.length} Test{selectedTests.length === 1 ? "" : "s"} Added</strong>
+            <span style={styles.labCompareBarMeta}>Add more tests to compare prices</span>
+          </div>
+          <button type="button" onClick={handleCompare} className="hover-lift" style={styles.labCompareBarButton}>
+            <span>GET BEST PRICE</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      ) : null}
     </DashboardFrame>
+  );
+}
+
+function LabCompareInner() {
+  const searchParams = useSearchParams();
+  const [tests, setTests] = useState<LabTestSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortOrder, setSortOrder] = useState<"low-high" | "high-low" | "name">("low-high");
+  const [showFilters, setShowFilters] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [bestPriceOnly, setBestPriceOnly] = useState(false);
+  const [homeCollectionOnly, setHomeCollectionOnly] = useState(false);
+  const [nablOnly, setNablOnly] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchApprovedLabTests()
+      .then(setTests)
+      .catch(() => setTests([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectedKeys = useMemo(
+    () => String(searchParams.get("tests") || "").split(",").map((item) => item.trim()).filter(Boolean),
+    [searchParams],
+  );
+
+  const groupedTests = useMemo(() => groupLabTestsForWeb(tests), [tests]);
+  const selectedGroups = useMemo(
+    () => groupedTests.filter((item) => selectedKeys.includes(item.groupKey)),
+    [groupedTests, selectedKeys],
+  );
+  const providers = useMemo(() => aggregateLabProviders(selectedGroups), [selectedGroups]);
+  const bestOverallPrice = useMemo(() => {
+    if (!providers.length) return 0;
+    return Math.min(...providers.map((provider) => provider.total));
+  }, [providers]);
+  const sortedProviders = useMemo(() => {
+    const rows = [...providers];
+    if (bestPriceOnly) rows.splice(0, rows.length, ...rows.filter((row) => row.total === bestOverallPrice));
+    if (homeCollectionOnly) rows.splice(0, rows.length, ...rows.filter((row) => row.homeCollection));
+    if (nablOnly) rows.splice(0, rows.length, ...rows.filter((row) => row.nablAccredited));
+    rows.sort((a, b) => {
+      if (sortOrder === "high-low") return b.total - a.total || a.labName.localeCompare(b.labName);
+      if (sortOrder === "name") return a.labName.localeCompare(b.labName);
+      return a.total - b.total || a.labName.localeCompare(b.labName);
+    });
+    return rows;
+  }, [bestOverallPrice, bestPriceOnly, homeCollectionOnly, nablOnly, providers, sortOrder]);
+  const bestPrice = bestOverallPrice || sortedProviders[0]?.total || 0;
+
+  function updateSelectedKeys(nextKeys: string[]) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextKeys.length) params.set("tests", nextKeys.join(","));
+    else params.delete("tests");
+    router.replace(`/lab-tests/compare${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  function toggleSelectedGroup(groupKey: string) {
+    if (selectedKeys.includes(groupKey)) {
+      updateSelectedKeys(selectedKeys.filter((key) => key !== groupKey));
+      return;
+    }
+    updateSelectedKeys([...selectedKeys, groupKey]);
+  }
+
+  return (
+    <DashboardFrame title="Compare Lab Tests" subtitle="Review approved providers, compare prices, and choose the best option for your selected tests.">
+      {loading ? <div style={styles.noticeCard}>Loading selected tests...</div> : null}
+      {!loading && !selectedGroups.length ? (
+        <section style={styles.emptyPanel}>
+          <h2 style={styles.emptyTitle}>No tests selected</h2>
+          <p style={styles.emptyCopy}>Choose one or more tests from the lab tests page to compare providers and prices.</p>
+          <Link href="/lab-tests" style={styles.emptyPanelAction}>Browse Lab Tests</Link>
+        </section>
+      ) : null}
+
+      {!loading && selectedGroups.length ? (
+        <>
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Selected Tests ({selectedGroups.length})</h2>
+              <button type="button" onClick={() => setIsEditing((value) => !value)} style={styles.linkButtonInline}>
+                {isEditing ? "Done" : "Edit"}
+              </button>
+            </div>
+            <div style={styles.labSelectedTestsWrap}>
+              {selectedGroups.map((group) => (
+                <button
+                  type="button"
+                  key={group.groupKey}
+                  onClick={() => {
+                    if (!isEditing) return;
+                    toggleSelectedGroup(group.groupKey);
+                  }}
+                  style={{ ...styles.labSelectedTestChip, ...(isEditing ? styles.labSelectedTestChipEditing : {}) }}
+                >
+                  <span>{labCategoryIcon(group.category)}</span>
+                  <span>{group.name}</span>
+                  {isEditing ? <span style={styles.labSelectedTestChipClose}>×</span> : null}
+                </button>
+              ))}
+            </div>
+            {isEditing ? (
+              <div style={styles.labEditPanel}>
+                {groupedTests.map((group) => {
+                  const isSelected = selectedKeys.includes(group.groupKey);
+                  return (
+                    <button
+                      type="button"
+                      key={group.groupKey}
+                      className="hover-lift"
+                      onClick={() => toggleSelectedGroup(group.groupKey)}
+                      style={{ ...styles.labEditOption, ...(isSelected ? styles.labEditOptionActive : {}) }}
+                    >
+                      <div style={{ ...styles.labEditOptionIcon, ...(isSelected ? styles.labEditOptionIconActive : {}) }}>
+                        {labCategoryIcon(group.category)}
+                      </div>
+                      <div style={styles.labEditOptionCopy}>
+                        <strong style={styles.labEditOptionTitle}>{group.name}</strong>
+                        <span style={styles.labEditOptionSub}>From {formatMoney(group.minPrice)}</span>
+                      </div>
+                      <span style={styles.labEditOptionMark}>{isSelected ? "●" : "○"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            <div style={styles.labCompareTipCard}>
+              <span style={styles.labCompareTipIcon}>▣</span>
+              <span>Compare prices and choose the best lab for you</span>
+            </div>
+            <div style={styles.labCompareControls}>
+              <div style={styles.filterSelectWrap}>
+                <select
+                  aria-label="Sort compare providers"
+                  style={styles.filterSelect}
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as "low-high" | "high-low" | "name")}
+                >
+                  <option value="low-high">Total Price (Low to High)</option>
+                  <option value="high-low">Total Price (High to Low)</option>
+                  <option value="name">Lab Name</option>
+                </select>
+                <span aria-hidden="true" style={styles.filterSelectChevron}>▾</span>
+              </div>
+              <button
+                type="button"
+                className="hover-lift"
+                onClick={() => setShowFilters((value) => !value)}
+                style={{ ...styles.filterButton, ...(showFilters ? styles.filterChipActive : {}) }}
+              >
+                <span style={styles.filterButtonGlyph}>☷</span>
+                <span>Filters</span>
+              </button>
+            </div>
+            {showFilters ? (
+              <div style={styles.labFilterPanel}>
+                <button type="button" onClick={() => setBestPriceOnly((value) => !value)} style={{ ...styles.filterChip, ...(bestPriceOnly ? styles.filterChipActive : {}) }}>Best Price</button>
+                <button type="button" onClick={() => setHomeCollectionOnly((value) => !value)} style={{ ...styles.filterChip, ...(homeCollectionOnly ? styles.filterChipActive : {}) }}>Home Collection</button>
+                <button type="button" onClick={() => setNablOnly((value) => !value)} style={{ ...styles.filterChip, ...(nablOnly ? styles.filterChipActive : {}) }}>NABL Labs</button>
+              </div>
+            ) : null}
+          </section>
+
+          <section style={styles.sectionBlock}>
+            <div style={styles.sectionHead}>
+              <h2 style={styles.sectionTitle}>Providers for your tests</h2>
+              <span style={styles.labCompareOptionsCount}>{sortedProviders.length} option{sortedProviders.length === 1 ? "" : "s"}</span>
+            </div>
+            {!sortedProviders.length ? (
+              <div style={styles.noticeCard}>No labs match the active filters for your selected tests.</div>
+            ) : (
+              <div style={styles.labProviderGrid}>
+                {sortedProviders.map((provider) => {
+                const isBestPrice = provider.total === bestPrice;
+                const firstTestId = provider.tests[0]?.providerTestId;
+                return (
+                  <div
+                    key={provider.providerKey}
+                    className="hover-lift"
+                    style={{ ...styles.labProviderCompareCard, ...(isBestPrice ? styles.labProviderCompareCardBest : {}) }}
+                  >
+                    <div style={styles.labProviderCompareTop}>
+                      <div style={styles.labProviderAvatar}>{getInitials(provider.labName)}</div>
+                      <div style={styles.labProviderCompareCopy}>
+                        <strong style={styles.labProviderCompareName}>{provider.labName}</strong>
+                        <span style={styles.labProviderCompareSub}>{provider.nablAccredited ? "NABL Certified" : "Approved Provider"}</span>
+                        <span style={styles.labProviderCompareMeta}>{provider.city} · {provider.homeCollection ? "Home collection" : "Visit lab"}</span>
+                      </div>
+                      <div style={styles.labProviderPriceWrap}>
+                        {isBestPrice ? <span style={styles.labBestPriceBadge}>Best Price</span> : null}
+                        <strong style={styles.labProviderTotal}>{formatMoney(provider.total)}</strong>
+                        <span style={styles.labProviderTotalLabel}>Total</span>
+                      </div>
+                    </div>
+                    <div style={styles.labProviderTestList}>
+                      {provider.tests.map((test) => (
+                        <div key={`${provider.providerKey}-${test.groupKey}`} style={styles.labProviderTestRow}>
+                          <strong>{test.name}</strong>
+                          <span>{formatMoney(test.price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={styles.labProviderCompareFooter}>
+                      <span style={styles.labProviderCompareIncludes}>Includes {provider.tests.length} test{provider.tests.length === 1 ? "" : "s"}</span>
+                      {firstTestId ? <Link href={`/lab-tests/${firstTestId}`} className="hover-lift" style={styles.labProviderBookButton}>Book Now</Link> : null}
+                    </div>
+                  </div>
+                );
+                })}
+              </div>
+            )}
+            <div style={styles.labTrustRow}>
+              <span>🛡 100% Safe & Secure</span>
+              <span>🏠 Home Collection</span>
+              <span>✅ NABL Certified Labs</span>
+            </div>
+          </section>
+        </>
+      ) : null}
+    </DashboardFrame>
+  );
+}
+
+export function WebLabCompareScreen() {
+  return (
+    <Suspense fallback={<div style={styles.authPage}><div style={styles.callbackPanel}>Loading comparison...</div></div>}>
+      <LabCompareInner />
+    </Suspense>
   );
 }
 
@@ -4666,6 +5203,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: "0.86rem",
   },
+  linkButtonInline: {
+    border: "none",
+    background: "transparent",
+    color: themeStyles.brand,
+    fontWeight: 800,
+    fontSize: "0.96rem",
+    cursor: "pointer",
+    padding: 0,
+  },
   serviceGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
@@ -5099,6 +5645,586 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--success)",
     fontWeight: 800,
     fontSize: "0.8rem",
+  },
+  labSearchShell: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: 12,
+    alignItems: "center",
+  },
+  labSearchInput: {
+    minHeight: 52,
+  },
+  labUploadChip: {
+    minHeight: 52,
+    padding: "0 18px",
+    borderRadius: 20,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    color: themeStyles.brandDeep,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    fontWeight: 800,
+    boxShadow: "var(--shadow-card)",
+  },
+  labUploadChipIcon: {
+    fontSize: "1.35rem",
+    lineHeight: 1,
+  },
+  labHeroCard: {
+    borderRadius: 32,
+    overflow: "hidden",
+    background: "linear-gradient(135deg, #3e59ec 0%, #4f63f0 100%)",
+    boxShadow: "0 18px 42px rgba(63, 89, 236, 0.2)",
+  },
+  labHeroButton: {
+    width: "100%",
+    border: "none",
+    background: "transparent",
+    color: "#ffffff",
+    textAlign: "left",
+    display: "grid",
+    gap: 16,
+    padding: "30px 32px",
+    cursor: "pointer",
+  },
+  labHeroBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    padding: "10px 18px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.18)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    fontWeight: 900,
+    fontSize: "0.95rem",
+  },
+  labHeroTitle: {
+    margin: 0,
+    fontSize: "clamp(2rem, 1.7rem + 0.8vw, 3rem)",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+    maxWidth: 760,
+  },
+  labHeroCopy: {
+    margin: 0,
+    maxWidth: 720,
+    fontSize: "1.1rem",
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.9)",
+  },
+  labCategoryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: 16,
+  },
+  labCategoryCard: {
+    display: "grid",
+    justifyItems: "center",
+    gap: 12,
+    padding: "18px 14px",
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: themeStyles.line,
+    background: themeStyles.panel,
+    color: themeStyles.inkSoft,
+    cursor: "pointer",
+    boxShadow: "var(--shadow-card)",
+  },
+  labCategoryCardActive: {
+    borderColor: themeStyles.brand,
+    boxShadow: "0 12px 28px rgba(47, 89, 255, 0.14)",
+  },
+  labCategoryIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    background: "#f1f5ff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "2.1rem",
+    lineHeight: 1,
+  },
+  labCategoryIconBoxActive: {
+    background: "linear-gradient(135deg, #1f6bff 0%, #2f59ff 100%)",
+    color: "#fff",
+  },
+  labCategoryTitle: {
+    color: themeStyles.brandDeep,
+    fontSize: "1rem",
+    lineHeight: 1.15,
+    textTransform: "uppercase",
+    textAlign: "center",
+    fontWeight: 900,
+    letterSpacing: "0.02em",
+  },
+  labCategoryTitleActive: {
+    color: themeStyles.brand,
+  },
+  labCategoryCount: {
+    fontWeight: 900,
+    fontSize: "1.15rem",
+    color: themeStyles.inkSoft,
+  },
+  labCompareTip: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 18,
+    color: themeStyles.brand,
+    fontWeight: 900,
+    fontSize: "1rem",
+  },
+  labCompareTipIcon: {
+    fontSize: "1.15rem",
+    lineHeight: 1,
+  },
+  labTestGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+    gap: 18,
+  },
+  labTestCard: {
+    display: "grid",
+    gap: 18,
+    padding: 22,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: themeStyles.line,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  labTestCardSelected: {
+    borderColor: themeStyles.brand,
+    boxShadow: "0 14px 32px rgba(47, 89, 255, 0.14)",
+  },
+  labTestCardTapArea: {
+    border: "none",
+    background: "transparent",
+    padding: 0,
+    display: "grid",
+    gap: 12,
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  labTestIconBox: {
+    width: 104,
+    height: 104,
+    borderRadius: 24,
+    background: "#f3f7ff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "3rem",
+    lineHeight: 1,
+  },
+  labTestCardTitle: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "1.6rem",
+    lineHeight: 1.08,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+  },
+  labTestCardSub: {
+    margin: 0,
+    color: "#7886ad",
+    fontSize: "0.98rem",
+    fontWeight: 900,
+    letterSpacing: "0.04em",
+  },
+  labTestCardMeta: {
+    margin: 0,
+    color: "#7b8bb6",
+    fontSize: "0.98rem",
+    fontWeight: 800,
+  },
+  labTestCardReport: {
+    margin: 0,
+    color: themeStyles.success,
+    fontSize: "1.08rem",
+    fontWeight: 900,
+  },
+  labAddButton: {
+    minHeight: 56,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: themeStyles.brand,
+    background: themeStyles.panel,
+    color: themeStyles.brand,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    fontWeight: 900,
+    fontSize: "1rem",
+    cursor: "pointer",
+  },
+  labAddButtonActive: {
+    background: themeStyles.brand,
+    color: "#fff",
+  },
+  labCompareBar: {
+    position: "fixed",
+    left: "50%",
+    bottom: 24,
+    transform: "translateX(-50%)",
+    width: "min(980px, calc(100vw - 36px))",
+    display: "grid",
+    gridTemplateColumns: "86px minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: 18,
+    padding: "18px 20px",
+    borderRadius: 32,
+    background: themeStyles.panel,
+    boxShadow: "0 20px 48px rgba(25, 39, 92, 0.16)",
+    border: `1px solid ${themeStyles.line}`,
+    zIndex: 55,
+  },
+  labCompareBarIconWrap: {
+    position: "relative",
+    width: 74,
+    height: 74,
+    borderRadius: 24,
+    background: "linear-gradient(135deg, #1f6bff 0%, #2f59ff 100%)",
+    display: "grid",
+    placeItems: "center",
+  },
+  labCompareBarIcon: {
+    fontSize: "2rem",
+    lineHeight: 1,
+  },
+  labCompareBarBadge: {
+    position: "absolute",
+    top: -6,
+    right: -4,
+    minWidth: 30,
+    height: 30,
+    padding: "0 8px",
+    borderRadius: 999,
+    background: themeStyles.brand,
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    border: "3px solid #fff",
+  },
+  labCompareBarCopy: {
+    display: "grid",
+    gap: 4,
+    minWidth: 0,
+  },
+  labCompareBarTitle: {
+    color: themeStyles.brandDeep,
+    fontSize: "1.45rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+  },
+  labCompareBarMeta: {
+    color: themeStyles.muted,
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  labCompareBarButton: {
+    minHeight: 64,
+    padding: "0 26px",
+    borderRadius: 999,
+    border: "none",
+    background: "linear-gradient(135deg, #1f6bff 0%, #2f59ff 100%)",
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 12,
+    fontWeight: 900,
+    fontSize: "1.15rem",
+    cursor: "pointer",
+  },
+  labCompareSectionCopy: {
+    margin: "6px 0 0",
+    color: themeStyles.inkSoft,
+    fontSize: "0.95rem",
+    fontWeight: 700,
+  },
+  labProviderGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 16,
+  },
+  labProviderCard: {
+    display: "grid",
+    gap: 12,
+    padding: 18,
+    borderRadius: 18,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  labProviderCardTop: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  labProviderMeta: {
+    margin: 0,
+    color: themeStyles.inkSoft,
+    lineHeight: 1.5,
+  },
+  labSelectedTestsWrap: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  labSelectedTestChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "14px 18px",
+    border: "none",
+    borderRadius: 18,
+    background: themeStyles.brandTint,
+    color: themeStyles.brand,
+    fontWeight: 800,
+    fontSize: "1rem",
+    cursor: "default",
+  },
+  labSelectedTestChipEditing: {
+    cursor: "pointer",
+  },
+  labSelectedTestChipClose: {
+    fontSize: "1.15rem",
+    lineHeight: 1,
+  },
+  labEditPanel: {
+    display: "grid",
+    gap: 12,
+    marginTop: 18,
+  },
+  labEditOption: {
+    display: "grid",
+    gridTemplateColumns: "56px minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: 14,
+    padding: "16px 18px",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: themeStyles.line,
+    background: themeStyles.panel,
+    color: themeStyles.brandDeep,
+    textAlign: "left",
+    cursor: "pointer",
+    boxShadow: "var(--shadow-card)",
+  },
+  labEditOptionActive: {
+    borderColor: themeStyles.brand,
+    boxShadow: "0 14px 32px rgba(47, 89, 255, 0.14)",
+  },
+  labEditOptionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    background: "#eef3ff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.45rem",
+  },
+  labEditOptionIconActive: {
+    background: "linear-gradient(135deg, #1f6bff 0%, #2f59ff 100%)",
+    color: "#fff",
+  },
+  labEditOptionCopy: {
+    display: "grid",
+    gap: 4,
+    minWidth: 0,
+  },
+  labEditOptionTitle: {
+    color: themeStyles.brandDeep,
+    fontSize: "1rem",
+    lineHeight: 1.2,
+  },
+  labEditOptionSub: {
+    color: themeStyles.muted,
+    fontWeight: 700,
+    fontSize: "0.95rem",
+  },
+  labEditOptionMark: {
+    color: themeStyles.brand,
+    fontWeight: 900,
+    fontSize: "1.1rem",
+  },
+  labCompareTipCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 20,
+    padding: "18px 20px",
+    borderRadius: 20,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 900,
+    fontSize: "1.05rem",
+  },
+  labCompareControls: {
+    display: "flex",
+    gap: 14,
+    flexWrap: "wrap",
+    marginTop: 18,
+    alignItems: "center",
+  },
+  labFilterPanel: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 16,
+  },
+  labCompareOptionsCount: {
+    color: themeStyles.muted,
+    fontWeight: 800,
+    fontSize: "1rem",
+  },
+  labProviderCompareCard: {
+    display: "grid",
+    gap: 18,
+    padding: 24,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: themeStyles.line,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  labProviderCompareCardBest: {
+    borderColor: "#22c55e",
+    boxShadow: "0 18px 42px rgba(34, 197, 94, 0.14)",
+  },
+  labProviderCompareTop: {
+    display: "grid",
+    gridTemplateColumns: "88px minmax(0, 1fr) auto",
+    gap: 16,
+    alignItems: "start",
+  },
+  labProviderAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    background: "linear-gradient(135deg, #1f4fb2 0%, #2f59ff 100%)",
+    color: "#fff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.5rem",
+    fontWeight: 900,
+    letterSpacing: "-0.04em",
+  },
+  labProviderCompareCopy: {
+    display: "grid",
+    gap: 6,
+    minWidth: 0,
+  },
+  labProviderCompareName: {
+    color: themeStyles.brandDeep,
+    fontSize: "1.2rem",
+    lineHeight: 1.1,
+    letterSpacing: "-0.03em",
+  },
+  labProviderCompareSub: {
+    color: themeStyles.muted,
+    fontWeight: 800,
+    fontSize: "0.98rem",
+  },
+  labProviderCompareMeta: {
+    color: themeStyles.inkSoft,
+    fontWeight: 700,
+    fontSize: "0.98rem",
+  },
+  labProviderPriceWrap: {
+    display: "grid",
+    gap: 4,
+    justifyItems: "end",
+    textAlign: "right",
+  },
+  labBestPriceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 34,
+    padding: "0 16px",
+    borderRadius: 999,
+    background: "#22c55e",
+    color: "#fff",
+    fontWeight: 900,
+    fontSize: "0.95rem",
+    textTransform: "uppercase",
+  },
+  labProviderTotal: {
+    color: themeStyles.brandDeep,
+    fontSize: "2rem",
+    lineHeight: 1,
+    letterSpacing: "-0.05em",
+    fontWeight: 900,
+  },
+  labProviderTotalLabel: {
+    color: themeStyles.muted,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    fontSize: "0.82rem",
+  },
+  labProviderTestList: {
+    display: "grid",
+    gap: 10,
+  },
+  labProviderTestRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "16px 18px",
+    borderRadius: 20,
+    background: "#f7f9ff",
+    color: themeStyles.brandDeep,
+  },
+  labProviderCompareFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+    flexWrap: "wrap",
+  },
+  labProviderCompareIncludes: {
+    color: themeStyles.muted,
+    fontWeight: 800,
+    fontSize: "1rem",
+  },
+  labProviderBookButton: {
+    minHeight: 56,
+    padding: "0 26px",
+    borderRadius: 20,
+    background: "linear-gradient(135deg, #3558ff 0%, #2f59ff 100%)",
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "1rem",
+  },
+  labTrustRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 20,
+    flexWrap: "wrap",
+    marginTop: 20,
+    paddingTop: 18,
+    borderTop: `1px solid ${themeStyles.line}`,
+    color: themeStyles.muted,
+    fontWeight: 800,
+    fontSize: "1rem",
   },
   doctorCardAction: {
     minHeight: 44,

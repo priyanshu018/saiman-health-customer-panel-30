@@ -63,6 +63,8 @@ export type LabTestSummary = {
   labAddress: string;
   city: string;
   price: number;
+  homeCollection: boolean;
+  nablAccredited: boolean;
   reportTime: string;
   imageUrl: string | null;
 };
@@ -624,7 +626,7 @@ export async function fetchApprovedLabTests() {
           .eq("is_active", true),
         supabase
           .from("users")
-          .select("id,lab_name,city")
+          .select("id,lab_name,city,nabl_accredited")
           .in("id", labIds)
           .eq("role", "lab")
           .eq("verification_status", "approved"),
@@ -652,6 +654,8 @@ export async function fetchApprovedLabTests() {
             labAddress: "Address shared after booking",
             city: text(lab.city, "Location not specified"),
             price: numberValue(row.price, 0),
+            homeCollection: true,
+            nablAccredited: Boolean((lab as { nabl_accredited?: unknown }).nabl_accredited),
             reportTime: text(test.report_delivery_text, "24-48 hrs"),
             imageUrl: text((test as { image_url?: unknown }).image_url) || null,
           } satisfies LabTestSummary;
@@ -664,7 +668,7 @@ export async function fetchApprovedLabTests() {
 
   const legacyQuery = await supabase
     .from("lab_test_approvals")
-    .select("id,test_name,category,lab_name,city,price,report_time,image_url,lab_id,catalog_test_id")
+    .select("id,test_name,category,lab_name,city,price,home_collection,report_time,nabl_accredited,image_url,lab_id,catalog_test_id")
     .eq("status", "Approved")
     .eq("is_active", true)
     .order("test_name", { ascending: true });
@@ -681,6 +685,8 @@ export async function fetchApprovedLabTests() {
     labAddress: "Address shared after booking",
     city: text(row.city, "Location not specified"),
     price: numberValue(row.price, 0),
+    homeCollection: (row as { home_collection?: unknown }).home_collection !== false,
+    nablAccredited: Boolean((row as { nabl_accredited?: unknown }).nabl_accredited),
     reportTime: text(row.report_time, "24-48 hrs"),
     imageUrl: text((row as { image_url?: unknown }).image_url) || null,
   })) satisfies LabTestSummary[];
