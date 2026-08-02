@@ -145,6 +145,26 @@ export type PendingPayment =
         deliveryDate?: string | null;
         deliveryTimeSlot?: string | null;
       };
+    }
+  | {
+      kind: "ambulance_booking";
+      returnTo: string;
+      redirectUri: string;
+      payment: CreateTransactionPayload;
+      booking: {
+        ambulanceId: string | null;
+        ambulanceName: string;
+        ambulanceType: string;
+        vehicleNumber?: string | null;
+        serviceArea?: string | null;
+        pickupAddress: string;
+        pickupArea?: string | null;
+        dropAddress: string;
+        dropArea?: string | null;
+        fare: number;
+        etaMinutes?: number | null;
+        caseType?: "Emergency" | "Normal";
+      };
     };
 
 const PENDING_KEY = "saiman-web-pending-payment-v1";

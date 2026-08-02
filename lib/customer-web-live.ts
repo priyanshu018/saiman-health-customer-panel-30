@@ -69,6 +69,32 @@ export type LabTestSummary = {
   imageUrl: string | null;
 };
 
+export type AmbulanceDriverSummary = {
+  id: string;
+  name: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  vehicleNumber: string;
+  vehicleType: string;
+  serviceArea: string | null;
+  city: string;
+  isOnline: boolean;
+};
+
+export type AmbulanceBookingSummary = {
+  id: string;
+  ambulanceId: string | null;
+  ambulanceName: string;
+  vehicleNumber: string;
+  vehicleType: string;
+  pickupAddress: string;
+  dropAddress: string;
+  fare: number;
+  status: string;
+  paymentStatus: string;
+  createdAt: string;
+};
+
 export type HospitalSummary = {
   id: string;
   name: string;
@@ -709,6 +735,103 @@ export async function fetchApprovedHospitals() {
     city: text(row.city, "Location not specified"),
     totalBeds: row.total_beds == null ? null : numberValue(row.total_beds),
   })) satisfies HospitalSummary[];
+}
+
+export async function fetchOnlineAmbulances() {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,name,phone,avatar_url,vehicle_number,vehicle_type,service_area,city,is_online,verification_status,role")
+    .eq("role", "ambulance")
+    .eq("verification_status", "approved")
+    .eq("is_online", true)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: text(row.name, "Ambulance Partner"),
+    phone: text(row.phone) || null,
+    avatarUrl: text(row.avatar_url) || null,
+    vehicleNumber: text(row.vehicle_number, "Vehicle number pending"),
+    vehicleType: text(row.vehicle_type, "Ambulance"),
+    serviceArea: text(row.service_area) || null,
+    city: text(row.city, "Location not specified"),
+    isOnline: Boolean(row.is_online),
+  })) satisfies AmbulanceDriverSummary[];
+}
+
+export async function createAmbulanceBooking(params: {
+  patientId: string;
+  ambulanceId: string | null;
+  pickupAddress: string;
+  pickupArea?: string | null;
+  dropAddress: string;
+  dropArea?: string | null;
+  ambulanceType: string;
+  fare: number;
+  etaMinutes?: number | null;
+  caseType?: "Emergency" | "Normal";
+}) {
+  const supabase = client();
+  const ambulanceId = params.ambulanceId || (await fetchOnlineAmbulances())[0]?.id || null;
+
+  if (!ambulanceId) {
+    throw new Error("No approved ambulance account is online right now.");
+  }
+
+  const { data, error } = await supabase
+    .from("ambulance_bookings")
+    .insert({
+      patient_id: params.patientId,
+      ambulance_id: ambulanceId,
+      pickup_address: params.pickupAddress,
+      pickup_area: params.pickupArea || null,
+      drop_address: params.dropAddress,
+      drop_area: params.dropArea || null,
+      ambulance_type: params.ambulanceType,
+      fare: params.fare,
+      payment_method: "Online",
+      payment_status: "paid",
+      distance_km: null,
+      eta_minutes: params.etaMinutes ?? null,
+      case_type: params.caseType || "Normal",
+      status: "requested",
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as { id: string };
+}
+
+export async function fetchPatientAmbulanceBookings(patientId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("ambulance_bookings")
+    .select("id,ambulance_id,pickup_address,drop_address,ambulance_type,fare,status,payment_status,created_at,ambulance:ambulance_id(name,vehicle_number,vehicle_type)")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((row) => {
+    const ambulance = relationRow(row.ambulance);
+    return {
+      id: row.id,
+      ambulanceId: text(row.ambulance_id) || null,
+      ambulanceName: text(ambulance?.name, "Ambulance Partner"),
+      vehicleNumber: text(ambulance?.vehicle_number, "Vehicle number pending"),
+      vehicleType: text(ambulance?.vehicle_type, text(row.ambulance_type, "Ambulance")),
+      pickupAddress: text(row.pickup_address),
+      dropAddress: text(row.drop_address),
+      fare: numberValue(row.fare, 0),
+      status: text(row.status, "requested"),
+      paymentStatus: text(row.payment_status, "paid"),
+      createdAt: text(row.created_at),
+    };
+  }) satisfies AmbulanceBookingSummary[];
 }
 
 async function fetchProviderServiceCatalogRows(table: string, ids: string[]) {

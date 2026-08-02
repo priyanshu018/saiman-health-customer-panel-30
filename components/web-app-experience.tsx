@@ -17,11 +17,13 @@ import {
 } from "@/lib/customer-site-cms";
 import { subscriptionPlans } from "@/lib/customer-web-data";
 import {
+  createAmbulanceBooking,
   cancelInstantCallRequest,
   cancelRentalOrder,
   createDoctorAppointment,
   createPharmacyOrder,
   createStaffingBooking,
+  fetchOnlineAmbulances,
   fetchDoctorSpecializations,
   fetchActiveInstantCallRequest,
   fetchApprovedCtmriServices,
@@ -34,6 +36,7 @@ import {
   fetchCustomerProfile,
   fetchInstantCallHistory,
   fetchPatientAppointments,
+  fetchPatientAmbulanceBookings,
   fetchPatientLabBookings,
   fetchPatientPharmacyOrders,
   fetchPatientProviderServiceBookings,
@@ -51,6 +54,8 @@ import {
   subscribeToInstantCallRequest,
   subscribeToPatientStaffingBookings,
   type AppointmentSummary,
+  type AmbulanceBookingSummary,
+  type AmbulanceDriverSummary,
   type CtmriServiceSummary,
   type CustomerProfileSummary,
   type DoctorSummary,
@@ -119,6 +124,18 @@ function formatDateTimeLabel(date: string, time: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function fareForAmbulanceType(vehicleType?: string | null) {
+  const type = (vehicleType || "").toLowerCase();
+  if (type.includes("icu") || type.includes("critical") || type.includes("advanced") || type.includes("acls")) return 3500;
+  if (type.includes("basic") || type.includes("bls")) return 2200;
+  return 1800;
+}
+
+function isEmergencyVehicle(vehicleType?: string | null) {
+  const type = (vehicleType || "").toLowerCase();
+  return type.includes("icu") || type.includes("critical") || type.includes("advanced") || type.includes("acls");
 }
 
 function DoctorCategoryIconMark({ iconKey }: { iconKey: string }) {
@@ -4135,37 +4152,353 @@ export function WebStaffingBookingsScreen() {
 }
 
 export function WebAmbulanceScreen() {
+  const { user } = useCustomerUser();
+  const { requireAuth } = useAuthActionGuard();
+  const [ambulances, setAmbulances] = useState<AmbulanceDriverSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [dropAddress, setDropAddress] = useState("");
+  const [recentBookings, setRecentBookings] = useState<AmbulanceBookingSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [profileCity, setProfileCity] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetchOnlineAmbulances()
+      .then((rows) => {
+        if (!active) return;
+        setAmbulances(rows);
+        setSelectedId(rows[0]?.id || null);
+        setLoadError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAmbulances([]);
+        setSelectedId(null);
+        setLoadError(error instanceof Error ? error.message : "Unable to load ambulances.");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!user) {
+      Promise.resolve().then(() => {
+        if (!active) return;
+        setRecentBookings([]);
+        setProfileCity("");
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    fetchPatientAmbulanceBookings(user.id)
+      .then((rows) => {
+        if (active) setRecentBookings(rows);
+      })
+      .catch(() => {
+        if (active) setRecentBookings([]);
+      });
+
+    fetchCustomerProfile(user.id)
+      .then((profile) => {
+        if (!active) return;
+        setProfileCity(profile.city || "");
+        setPickupAddress((current) => (current.trim() ? current : profile.city || current));
+      })
+      .catch(() => {
+        if (active) setProfileCity("");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const selectedAmbulance = useMemo(
+    () => ambulances.find((item) => item.id === selectedId) || null,
+    [ambulances, selectedId],
+  );
+
+  async function detectCurrentLocation() {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      if (profileCity) {
+        setPickupAddress(profileCity);
+        return;
+      }
+      setActionError("Location services are unavailable in this browser. Enter the pickup address manually.");
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    setActionError("");
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 12000 }),
+      );
+      const coordsLabel = `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+      setPickupAddress(profileCity ? `${profileCity} · ${coordsLabel}` : coordsLabel);
+    } catch {
+      if (profileCity) {
+        setPickupAddress(profileCity);
+      } else {
+        setActionError("Unable to detect your current location. Please enter the pickup address manually.");
+      }
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  }
+
+  async function handleProceed(ambulanceId = selectedId) {
+    const authUser = requireAuth("/ambulance");
+    if (!authUser) return;
+    const pickup = pickupAddress.trim();
+    const drop = dropAddress.trim();
+    const ambulance = ambulances.find((item) => item.id === ambulanceId);
+
+    setActionError("");
+    if (!pickup || !drop) {
+      setActionError("Please enter both pickup and drop locations before booking.");
+      return;
+    }
+    if (!ambulance) {
+      setActionError("No approved ambulance account is online right now.");
+      return;
+    }
+
+    const fare = fareForAmbulanceType(ambulance.vehicleType);
+    const etaMinutes = 15;
+
+    try {
+      await beginWebPayment({
+        kind: "ambulance_booking",
+        returnTo: "/ambulance",
+        redirectUri: `${window.location.origin}/payment-callback`,
+        booking: {
+          ambulanceId: ambulance.id,
+          ambulanceName: ambulance.name,
+          ambulanceType: ambulance.vehicleType,
+          vehicleNumber: ambulance.vehicleNumber,
+          serviceArea: ambulance.serviceArea,
+          pickupAddress: pickup,
+          pickupArea: ambulance.serviceArea || ambulance.city,
+          dropAddress: drop,
+          dropArea: null,
+          fare,
+          etaMinutes,
+          caseType: isEmergencyVehicle(ambulance.vehicleType) ? "Emergency" : "Normal",
+        },
+        payment: {
+          serviceType: "ambulance_booking",
+          serviceLabel: ambulance.vehicleType || ambulance.name,
+          description: `Ambulance booking from ${pickup} to ${drop}`,
+          amount: fare,
+          paymentMethod: "online",
+          providerId: ambulance.id,
+          providerName: ambulance.name,
+          customer: {
+            name: authUser.name,
+            email: authUser.email,
+            phone: authUser.phone,
+          },
+          metadata: {
+            pickupAddress: pickup,
+            dropAddress: drop,
+            vehicleNumber: ambulance.vehicleNumber,
+            vehicleType: ambulance.vehicleType,
+            serviceArea: ambulance.serviceArea,
+          },
+        },
+      });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to start ambulance payment.");
+    }
+  }
+
   return (
     <DashboardFrame title="Ambulance" subtitle="Request emergency transport and get connected with a nearby ambulance quickly.">
-      <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
-        <section style={styles.heroPanel}>
-          <div style={styles.heroTag}>24×7 Emergency</div>
-          <h2 style={styles.heroHeading}>Emergency transport with quicker action steps.</h2>
-          <p style={styles.heroCopy}>Request emergency transport, share pickup and drop details, and get connected with a nearby ambulance.</p>
-          <div style={styles.heroActionRow}>
-            <a href="tel:01244567890" style={styles.primaryActionLink}>Call 0124 456 7890</a>
-            <Link href="/support" style={styles.secondaryActionLink}>Emergency support ticket</Link>
+      <section style={styles.ambulanceTopBar}>
+        <div style={styles.ambulanceTopBarInner}>
+          <div>
+            <h2 style={styles.ambulanceTopTitle}>Select Ambulance</h2>
+            <p style={styles.ambulanceTopSub}>
+              {isLoading ? "Checking live availability" : `${ambulances.length} ambulance${ambulances.length === 1 ? "" : "s"} online`}
+            </p>
           </div>
-        </section>
+          <div style={styles.ambulanceTopActions}>
+            <a href="tel:01244567890" style={styles.ambulanceTopPill}>Emergency Call</a>
+          </div>
+        </div>
+      </section>
 
+      <section style={styles.sectionBlock}>
+        <div style={styles.ambulanceLocationCard}>
+          <div style={styles.ambulanceLocationIcon}>📍</div>
+          <div style={styles.ambulanceLocationCopy}>
+            <span style={styles.ambulanceFieldLabel}>Pickup Location</span>
+            <div style={styles.ambulanceLocationValue}>{pickupAddress.trim() || profileCity || "Add your pickup location"}</div>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.ambulanceRouteCard}>
+          <div style={styles.ambulanceRouteRail}>
+            <div style={styles.ambulanceRouteDotPickup} />
+            <div style={styles.ambulanceRouteConnector} />
+            <div style={styles.ambulanceRouteDotDrop} />
+          </div>
+          <div style={styles.ambulanceRouteFields}>
+            <div>
+              <div style={styles.ambulanceRouteLabelRow}>
+                <span style={styles.ambulanceFieldLabel}>Pickup</span>
+                <button type="button" onClick={detectCurrentLocation} style={styles.ambulanceUseCurrentButton}>
+                  {isDetectingLocation ? "Detecting..." : "Use current"}
+                </button>
+              </div>
+              <div style={styles.ambulanceInputWrap}>
+                <textarea
+                  style={styles.ambulanceRouteInput}
+                  value={pickupAddress}
+                  onChange={(event) => setPickupAddress(event.target.value)}
+                  placeholder="Enter pickup address"
+                />
+                {pickupAddress ? (
+                  <button type="button" onClick={() => setPickupAddress("")} style={styles.ambulanceClearButton}>×</button>
+                ) : null}
+              </div>
+            </div>
+            <div style={styles.ambulanceDistancePill}>📏 Distance calculated after confirmation</div>
+            <div>
+              <span style={styles.ambulanceFieldLabel}>Drop</span>
+              <div style={styles.ambulanceInputWrap}>
+                <textarea
+                  style={styles.ambulanceRouteInput}
+                  value={dropAddress}
+                  onChange={(event) => setDropAddress(event.target.value)}
+                  placeholder="Enter hospital / drop address"
+                />
+                {dropAddress ? (
+                  <button type="button" onClick={() => setDropAddress("")} style={styles.ambulanceClearButton}>×</button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+        {actionError ? <div style={styles.errorNote}>{actionError}</div> : null}
+      </section>
+
+      <section style={styles.sectionBlock}>
+        <div style={styles.sectionHead}>
+          <h2 style={styles.sectionTitle}>Available Ambulances</h2>
+          <span style={styles.ambulanceCountBadge}>{ambulances.length}</span>
+        </div>
+
+        {isLoading ? <div style={styles.noticeCard}>Checking online ambulance accounts...</div> : null}
+        {!isLoading && loadError ? <div style={styles.errorNote}>{loadError}</div> : null}
+        {!isLoading && !loadError && !ambulances.length ? (
+          <div style={styles.noticeCard}>No approved ambulance account is online right now.</div>
+        ) : null}
+
+        <div style={styles.ambulanceCardGrid}>
+          {ambulances.map((item) => {
+            const selected = item.id === selectedId;
+            const fare = fareForAmbulanceType(item.vehicleType);
+            return (
+              <div
+                key={item.id}
+                className="hover-lift"
+                onClick={() => setSelectedId(item.id)}
+                style={{ ...styles.ambulanceOptionCard, ...(selected ? styles.ambulanceOptionCardActive : {}) }}
+              >
+                {selected ? <div style={styles.ambulanceSelectedStrip} /> : null}
+                <div style={styles.ambulanceCardTop}>
+                  <div style={{ ...styles.ambulanceArtWrapWeb, ...(selected ? styles.ambulanceArtWrapWebActive : {}) }}>
+                    <Image src="/home-service-ambulance.png" alt={item.name} width={86} height={56} style={styles.ambulanceWebImage} />
+                  </div>
+                  <div style={styles.ambulanceCardCopy}>
+                    <div style={styles.ambulanceCardTitleRow}>
+                      <strong style={styles.ambulanceCardTitle}>{item.name}</strong>
+                      {selected ? <span style={styles.ambulanceSelectedCheck}>✓</span> : null}
+                    </div>
+                    <span style={styles.ambulanceBadge}>VERIFIED PARTNER</span>
+                    <div style={styles.ambulanceEtaRow}>
+                      <span style={styles.ambulanceGreenDot} />
+                      <span>Available now</span>
+                    </div>
+                  </div>
+                  <div style={styles.ambulancePriceBlock}>
+                    <strong style={styles.ambulancePriceValue}>{formatMoney(fare)}</strong>
+                    <span style={styles.ambulancePriceLabel}>Base Fare</span>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleProceed(item.id);
+                      }}
+                      style={{ ...styles.ambulanceSelectButton, ...(selected ? styles.ambulanceSelectButtonActive : {}) }}
+                    >
+                      <span>{selected ? "Book Now" : "Select"}</span>
+                      {selected ? <span>→</span> : null}
+                    </button>
+                  </div>
+                </div>
+                <div style={styles.ambulanceFeatureRow}>
+                  {["Verified", "Online", item.phone ? "Contactable" : "Phone pending"].map((feature) => (
+                    <span key={feature} style={{ ...styles.ambulanceFeaturePill, ...(selected ? styles.ambulanceFeaturePillActive : {}) }}>
+                      <span>✓</span>
+                      <span>{feature}</span>
+                    </span>
+                  ))}
+                </div>
+                <p style={styles.ambulanceCareText}>
+                  {item.vehicleNumber}{item.serviceArea ? ` · ${item.serviceArea}` : item.city ? ` · ${item.city}` : ""}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {recentBookings.length ? (
         <section style={styles.sectionBlock}>
           <div style={styles.sectionHead}>
-            <h2 style={styles.sectionTitle}>Tracked milestones</h2>
+            <h2 style={styles.sectionTitle}>My Ambulance Bookings</h2>
           </div>
-          <div style={styles.stackList}>
-            {[
-              ["Request Created", "Share pickup location, patient context, and destination hospital."],
-              ["Vehicle Assigned", "We'll share driver and vehicle details as soon as one is assigned."],
-              ["Trip Completed", "Review bill summary, care handoff, and history in one place."],
-            ].map(([title, copy]) => (
-              <div key={title} style={styles.stepCard}>
-                <strong>{title}</strong>
-                <p>{copy}</p>
+          <div style={styles.orderGrid}>
+            {recentBookings.slice(0, 3).map((booking) => (
+              <div key={booking.id} style={styles.orderCard}>
+                <strong>{booking.ambulanceName}</strong>
+                <span>{booking.vehicleType} · {booking.status}</span>
+                <small>{formatMoney(booking.fare)} · {formatDate(booking.createdAt)}</small>
+                <p>{booking.pickupAddress}</p>
               </div>
             ))}
           </div>
         </section>
-      </div>
+      ) : null}
+
+      {selectedAmbulance ? (
+        <div style={styles.ambulanceStickyBar}>
+          <div style={styles.ambulanceStickyCopy}>
+            <span style={styles.ambulanceStickyLabel}>Proceed with</span>
+            <strong style={styles.ambulanceStickyName}>{selectedAmbulance.name}</strong>
+          </div>
+          <button type="button" onClick={() => void handleProceed()} style={styles.ambulanceStickyButton}>
+            <span>→</span>
+          </button>
+        </div>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -4497,6 +4830,24 @@ function PaymentCallbackInner() {
             entityType: "pharmacy_order",
           });
           clearCart();
+        } else if (pending.kind === "ambulance_booking") {
+          const booking = await createAmbulanceBooking({
+            patientId: user.id,
+            ambulanceId: pending.booking.ambulanceId,
+            pickupAddress: pending.booking.pickupAddress,
+            pickupArea: pending.booking.pickupArea,
+            dropAddress: pending.booking.dropAddress,
+            dropArea: pending.booking.dropArea,
+            ambulanceType: pending.booking.ambulanceType,
+            fare: pending.booking.fare,
+            etaMinutes: pending.booking.etaMinutes,
+            caseType: pending.booking.caseType,
+          });
+          await linkTransactionToEntity({
+            transactionId: transaction.transactionId,
+            entityId: booking.id,
+            entityType: "ambulance_booking",
+          });
         } else if (
           pending.kind === "lab_booking" ||
           pending.kind === "hospital_booking" ||
@@ -6225,6 +6576,426 @@ const styles: Record<string, React.CSSProperties> = {
     color: themeStyles.muted,
     fontWeight: 800,
     fontSize: "1rem",
+  },
+  ambulanceTopBar: {
+    borderRadius: 28,
+    padding: "26px 28px",
+    background: "linear-gradient(135deg, #1e2d5a 0%, #25386f 100%)",
+    color: "#fff",
+    boxShadow: "0 20px 44px rgba(30, 45, 90, 0.18)",
+  },
+  ambulanceTopBarInner: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 18,
+    flexWrap: "wrap",
+  },
+  ambulanceTopTitle: {
+    margin: 0,
+    fontSize: "2rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+    color: "#fff",
+  },
+  ambulanceTopSub: {
+    margin: "6px 0 0",
+    fontSize: "1rem",
+    color: "rgba(210,220,255,0.82)",
+    fontWeight: 700,
+  },
+  ambulanceTopActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  ambulanceTopPill: {
+    minHeight: 44,
+    padding: "0 16px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+  },
+  ambulanceLocationCard: {
+    display: "grid",
+    gridTemplateColumns: "72px minmax(0, 1fr)",
+    gap: 16,
+    alignItems: "center",
+    padding: "14px 16px",
+    borderRadius: 24,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  ambulanceLocationIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    background: "#eef3ff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.8rem",
+  },
+  ambulanceLocationCopy: {
+    display: "grid",
+    gap: 6,
+    minWidth: 0,
+  },
+  ambulanceLocationValue: {
+    minHeight: 42,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "0 16px",
+    borderRadius: 999,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+    fontSize: "1rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  ambulanceFieldLabel: {
+    fontSize: "0.78rem",
+    color: "#8a98be",
+    fontWeight: 900,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+  },
+  ambulanceRouteCard: {
+    display: "grid",
+    gridTemplateColumns: "18px minmax(0, 1fr)",
+    gap: 18,
+    padding: 22,
+    borderRadius: 26,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  ambulanceRouteRail: {
+    display: "grid",
+    justifyItems: "center",
+    gridTemplateRows: "14px minmax(48px, 1fr) 14px",
+  },
+  ambulanceRouteDotPickup: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    background: themeStyles.brand,
+  },
+  ambulanceRouteConnector: {
+    width: 2,
+    minHeight: 70,
+    background: "#dfe6ff",
+  },
+  ambulanceRouteDotDrop: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    background: "#ef4444",
+  },
+  ambulanceRouteFields: {
+    display: "grid",
+    gap: 14,
+  },
+  ambulanceRouteLabelRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 6,
+  },
+  ambulanceUseCurrentButton: {
+    minHeight: 34,
+    padding: "0 14px",
+    borderRadius: 999,
+    border: "none",
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  ambulanceInputWrap: {
+    position: "relative",
+  },
+  ambulanceRouteInput: {
+    width: "100%",
+    minHeight: 98,
+    resize: "vertical",
+    borderRadius: 22,
+    border: `1px solid ${themeStyles.line}`,
+    background: "#f8faff",
+    padding: "18px 56px 18px 18px",
+    color: themeStyles.brandDeep,
+    fontSize: "1.08rem",
+    lineHeight: 1.45,
+    fontWeight: 800,
+    outline: "none",
+  },
+  ambulanceClearButton: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    border: "none",
+    background: "#e8ecff",
+    color: "#64748b",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.25rem",
+    cursor: "pointer",
+  },
+  ambulanceDistancePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    padding: "8px 14px",
+    borderRadius: 999,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+    fontSize: "0.95rem",
+  },
+  ambulanceCountBadge: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 10,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+  },
+  ambulanceCardGrid: {
+    display: "grid",
+    gap: 16,
+  },
+  ambulanceOptionCard: {
+    position: "relative",
+    display: "grid",
+    gap: 14,
+    padding: 18,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "#edf2ff",
+    background: "#fff",
+    boxShadow: "var(--shadow-card)",
+    cursor: "pointer",
+  },
+  ambulanceOptionCardActive: {
+    borderColor: "#c5cffe",
+    background: "#fafbff",
+  },
+  ambulanceSelectedStrip: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    background: themeStyles.brand,
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+  },
+  ambulanceCardTop: {
+    display: "grid",
+    gridTemplateColumns: "110px minmax(0, 1fr) auto",
+    gap: 16,
+    alignItems: "start",
+  },
+  ambulanceArtWrapWeb: {
+    width: 110,
+    height: 78,
+    borderRadius: 20,
+    border: `1.5px solid ${themeStyles.line}`,
+    background: "#f5f7ff",
+    display: "grid",
+    placeItems: "center",
+  },
+  ambulanceArtWrapWebActive: {
+    background: "#eef3ff",
+    borderColor: "#c5cffe",
+  },
+  ambulanceWebImage: {
+    width: "auto",
+    height: "auto",
+    objectFit: "contain",
+  },
+  ambulanceCardCopy: {
+    display: "grid",
+    gap: 8,
+    minWidth: 0,
+  },
+  ambulanceCardTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  ambulanceCardTitle: {
+    color: themeStyles.brandDeep,
+    fontSize: "1.25rem",
+    lineHeight: 1.15,
+    letterSpacing: "-0.03em",
+  },
+  ambulanceSelectedCheck: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    background: themeStyles.brand,
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    flexShrink: 0,
+  },
+  ambulanceBadge: {
+    display: "inline-flex",
+    width: "fit-content",
+    padding: "6px 12px",
+    borderRadius: 999,
+    background: "#dcfce7",
+    color: "#16a34a",
+    fontWeight: 900,
+    fontSize: "0.82rem",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  },
+  ambulanceEtaRow: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    color: "#16a34a",
+    fontWeight: 800,
+    fontSize: "1rem",
+  },
+  ambulanceGreenDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    background: "#16a34a",
+  },
+  ambulancePriceBlock: {
+    display: "grid",
+    justifyItems: "end",
+    gap: 4,
+    textAlign: "right",
+  },
+  ambulancePriceValue: {
+    color: themeStyles.brandDeep,
+    fontSize: "2rem",
+    lineHeight: 1,
+    letterSpacing: "-0.05em",
+    fontWeight: 900,
+  },
+  ambulancePriceLabel: {
+    color: themeStyles.muted,
+    fontSize: "0.82rem",
+    fontWeight: 700,
+  },
+  ambulanceSelectButton: {
+    minHeight: 48,
+    marginTop: 8,
+    padding: "0 16px",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "#c5cffe",
+    background: "#fff",
+    color: themeStyles.brand,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  ambulanceSelectButtonActive: {
+    background: themeStyles.brand,
+    borderColor: themeStyles.brand,
+    color: "#fff",
+  },
+  ambulanceFeatureRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  ambulanceFeaturePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "7px 12px",
+    borderRadius: 999,
+    border: `1px solid ${themeStyles.line}`,
+    background: "#f5f7ff",
+    color: "#8a98be",
+    fontWeight: 700,
+    fontSize: "0.9rem",
+  },
+  ambulanceFeaturePillActive: {
+    background: "#eef3ff",
+    borderColor: "#c5cffe",
+    color: themeStyles.brand,
+  },
+  ambulanceCareText: {
+    margin: 0,
+    color: "#a0aecf",
+    fontSize: "1rem",
+    lineHeight: 1.55,
+  },
+  ambulanceStickyBar: {
+    position: "fixed",
+    left: "50%",
+    bottom: 24,
+    transform: "translateX(-50%)",
+    width: "min(980px, calc(100vw - 36px))",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 18,
+    padding: "18px 22px",
+    borderRadius: 28,
+    background: "linear-gradient(135deg, #3f5af0 0%, #4a63f5 100%)",
+    color: "#fff",
+    boxShadow: "0 20px 48px rgba(63, 90, 240, 0.26)",
+    zIndex: 55,
+  },
+  ambulanceStickyCopy: {
+    display: "grid",
+    gap: 4,
+  },
+  ambulanceStickyLabel: {
+    fontSize: "0.9rem",
+    color: "rgba(255,255,255,0.78)",
+    fontWeight: 700,
+  },
+  ambulanceStickyName: {
+    fontSize: "1.8rem",
+    lineHeight: 1,
+    letterSpacing: "-0.05em",
+    color: "#fff",
+  },
+  ambulanceStickyButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    border: "none",
+    background: "#fff",
+    color: themeStyles.brand,
+    display: "grid",
+    placeItems: "center",
+    fontSize: "2rem",
+    cursor: "pointer",
+    flexShrink: 0,
   },
   doctorCardAction: {
     minHeight: 44,
