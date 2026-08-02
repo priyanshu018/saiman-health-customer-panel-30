@@ -22,6 +22,7 @@ import {
   createDoctorAppointment,
   createPharmacyOrder,
   createStaffingBooking,
+  fetchDoctorSpecializations,
   fetchActiveInstantCallRequest,
   fetchApprovedCtmriServices,
   fetchApprovedDoctors,
@@ -53,6 +54,7 @@ import {
   type CtmriServiceSummary,
   type CustomerProfileSummary,
   type DoctorSummary,
+  type DoctorSpecializationSummary,
   type HospitalServiceSummary,
   type InstantCallSummary,
   type LabBookingSummary,
@@ -117,6 +119,200 @@ function formatDateTimeLabel(date: string, time: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function DoctorCategoryIconMark({ iconKey }: { iconKey: string }) {
+  const key = iconKey.trim().toLowerCase();
+  const common = {
+    viewBox: "0 0 24 24",
+    width: 30,
+    height: 30,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  switch (key) {
+    case "medical-services":
+      return (
+        <svg {...common}>
+          <rect x="5" y="6" width="14" height="12" rx="2.5" />
+          <path d="M9 6V4.8M15 6V4.8M12 9v6M9 12h6" />
+        </svg>
+      );
+    case "favorite-border":
+      return (
+        <svg {...common}>
+          <path d="M12 20.5s-6.5-4.3-8.6-8.2C1.8 9.2 3.2 5.5 7 5.5c2.1 0 3.4 1.2 5 3 1.6-1.8 2.9-3 5-3 3.8 0 5.2 3.7 3.6 6.8-2.1 3.9-8.6 8.2-8.6 8.2Z" />
+        </svg>
+      );
+    case "face":
+    case "face-retouching-natural":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="7.5" />
+          <path d="M9.2 10.2h.01M14.8 10.2h.01" />
+          <path d="M9.4 14.2c1 .9 4.2.9 5.2 0" />
+        </svg>
+      );
+    case "person":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="8" r="3.2" />
+          <path d="M6.5 18.5c1.8-3.4 9.2-3.4 11 0" />
+        </svg>
+      );
+    case "self-improvement":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="6.5" r="2.2" />
+          <path d="M12 8.8v4.2" />
+          <path d="M12 13l-3.4 4.9" />
+          <path d="M12 13l3.4 4.9" />
+          <path d="M8.3 10.6 12 12.7l3.7-2.1" />
+        </svg>
+      );
+    case "pregnant-woman":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="5.8" r="2.2" />
+          <path d="M12 8.5v4.6" />
+          <path d="M12 13.1c2 0 3.8 1.3 3.8 3.7" />
+          <path d="M12 13.1c-1.6 0-2.8 1.4-2.8 3.1v2.3" />
+          <path d="M12 18.5v-2.8" />
+        </svg>
+      );
+    case "psychology":
+      return (
+        <svg {...common}>
+          <path d="M12 4.5c-3.8 0-7 2.7-7 6.5 0 2.8 1.8 5.2 4.5 6.1v2.4l2.4-1.9h.1c3.8 0 7-2.7 7-6.6 0-3.8-3.2-6.5-7-6.5Z" />
+          <path d="M10 9.3c.4-.9 2-.9 2.5 0 .4.8-.3 1.4-.9 1.8-.6.4-1 .8-1 1.6" />
+          <path d="M12 15h.01" />
+        </svg>
+      );
+    case "air":
+      return (
+        <svg {...common}>
+          <path d="M4 10.5h10.5a2.5 2.5 0 1 0 0-5" />
+          <path d="M6 14.5h12a2.5 2.5 0 1 1 0 5" />
+          <path d="M3 18.5h7" />
+        </svg>
+      );
+    case "healing":
+      return (
+        <svg {...common}>
+          <rect x="5" y="5" width="14" height="14" rx="3" />
+          <path d="M12 8v8M8 12h8" />
+        </svg>
+      );
+    case "hearing":
+      return (
+        <svg {...common}>
+          <path d="M15.8 9.3a3.8 3.8 0 1 0-7.6 0c0 2 1.2 2.8 2.2 3.5.9.6 1.6 1.1 1.6 2.2" />
+          <path d="M12 18.2a1.8 1.8 0 0 1-3.6 0" />
+          <path d="M16.5 5.8a7 7 0 0 1 0 9.9" />
+        </svg>
+      );
+    case "visibility":
+      return (
+        <svg {...common}>
+          <path d="M2.8 12s3.4-5.6 9.2-5.6 9.2 5.6 9.2 5.6-3.4 5.6-9.2 5.6S2.8 12 2.8 12Z" />
+          <circle cx="12" cy="12" r="2.5" />
+        </svg>
+      );
+    case "vaccines":
+      return (
+        <svg {...common}>
+          <path d="m8.5 7.5 8 8" />
+          <path d="m14.2 5.8 4 4" />
+          <path d="m7.2 8.8 2.2-2.2" />
+          <path d="m15.2 12.2-5.6 5.6" />
+          <path d="M6.8 17.8h4.4" />
+          <path d="M6 20h6" />
+        </svg>
+      );
+    case "biotech":
+      return (
+        <svg {...common}>
+          <path d="M9 4.8v5.1l-3 5.6a2.7 2.7 0 0 0 2.4 4h7.2a2.7 2.7 0 0 0 2.4-4l-3-5.6V4.8" />
+          <path d="M8 8h8" />
+          <path d="M9.2 13.2h5.6" />
+          <path d="M10.3 16h3.4" />
+        </svg>
+      );
+    case "water-drop":
+      return (
+        <svg {...common}>
+          <path d="M12 4.5s5.2 5.7 5.2 9.3a5.2 5.2 0 1 1-10.4 0C6.8 10.2 12 4.5 12 4.5Z" />
+        </svg>
+      );
+    case "science":
+      return (
+        <svg {...common}>
+          <path d="M10 4.8v4.4l-4 6.4A2.6 2.6 0 0 0 8.2 19h7.6a2.6 2.6 0 0 0 2.2-3.4l-4-6.4V4.8" />
+          <path d="M9 9.8h6" />
+          <path d="M8.8 14.2h6.4" />
+        </svg>
+      );
+    case "monitor-heart":
+      return (
+        <svg {...common}>
+          <rect x="4" y="6" width="16" height="10.5" rx="2.2" />
+          <path d="M8 12h2l1.5-2.4 2.2 4 1.3-2H17" />
+          <path d="M10 19.2h4" />
+        </svg>
+      );
+    case "emergency":
+      return (
+        <svg {...common}>
+          <path d="M12 4.8 5.2 18.5h13.6L12 4.8Z" />
+          <path d="M12 9.2v4.3" />
+          <path d="M12 16.2h.01" />
+        </svg>
+      );
+    case "child-care":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8.2" r="2.2" />
+          <circle cx="15" cy="8.2" r="2.2" />
+          <path d="M8.2 14.2c.8 1.5 2 2.3 3.8 2.3s3-.8 3.8-2.3" />
+          <path d="M7.4 12c1.2-.9 2.4-1.3 4.6-1.3s3.4.4 4.6 1.3" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <rect x="5" y="6" width="14" height="12" rx="2.5" />
+          <path d="M12 9v6M9 12h6" />
+        </svg>
+      );
+  }
+}
+
+function FilterSelectField(props: {
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  const { ariaLabel, value, onChange, children } = props;
+
+  return (
+    <div className="hover-lift" style={styles.filterSelectWrap}>
+      <select
+        aria-label={ariaLabel}
+        style={styles.filterSelect}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+      <span aria-hidden="true" style={styles.filterSelectChevron}>▾</span>
+    </div>
+  );
 }
 
 const EMPTY_CART_SNAPSHOT = {
@@ -942,10 +1138,14 @@ export function WebHomeScreen() {
 
 export function WebDoctorsScreen() {
   const [doctors, setDoctors] = useState<DoctorSummary[]>([]);
+  const [categories, setCategories] = useState<DoctorSpecializationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All");
+  const [experienceFilter, setExperienceFilter] = useState<"All" | "0-5" | "5-10" | "10+">("All");
+  const [feeFilter, setFeeFilter] = useState<"All" | "0-500" | "501-1000" | "1000+">("All");
+  const [availabilityFilter, setAvailabilityFilter] = useState<"All" | "Clinic" | "Video" | "Voice" | "Chat">("All");
 
   useEffect(() => {
     fetchApprovedDoctors()
@@ -954,26 +1154,62 @@ export function WebDoctorsScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  const specialties = useMemo(() => {
-    const specialtyMap = new Map<string, string>();
-    doctors.forEach((doctor) => {
-      const key = doctor.specialty.trim().toLowerCase();
-      if (key && !specialtyMap.has(key)) {
-        specialtyMap.set(key, doctor.specialty.trim().replace(/\w\S*/g, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase()));
-      }
-    });
-    return ["All", ...Array.from(specialtyMap.values()).sort()];
-  }, [doctors]);
+  useEffect(() => {
+    let active = true;
+
+    fetchDoctorSpecializations()
+      .then((items) => {
+        if (active) setCategories(items);
+      })
+      .catch(() => {
+        if (active) setCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const categoryOptions = useMemo(
+    () => [{ id: "all", name: "All", description: null, iconKey: "medical-services", isActive: true }, ...categories],
+    [categories],
+  );
 
   const filtered = useMemo(
     () =>
       doctors.filter((doctor) => {
         const matchesSpecialty = specialty === "All" || doctor.specialty.trim().toLowerCase() === specialty.trim().toLowerCase();
         const haystack = `${doctor.name} ${doctor.specialty} ${doctor.hospital} ${doctor.city}`.toLowerCase();
-        return matchesSpecialty && haystack.includes(query.toLowerCase());
+        const matchesQuery = haystack.includes(query.toLowerCase());
+
+        const matchesExperience =
+          experienceFilter === "All" ||
+          (experienceFilter === "0-5" && doctor.experience >= 0 && doctor.experience <= 5) ||
+          (experienceFilter === "5-10" && doctor.experience > 5 && doctor.experience <= 10) ||
+          (experienceFilter === "10+" && doctor.experience > 10);
+
+        const matchesFee =
+          feeFilter === "All" ||
+          (feeFilter === "0-500" && doctor.fee <= 500) ||
+          (feeFilter === "501-1000" && doctor.fee > 500 && doctor.fee <= 1000) ||
+          (feeFilter === "1000+" && doctor.fee > 1000);
+
+        const matchesAvailability =
+          availabilityFilter === "All" ||
+          doctor.availability.some((item) => item.toLowerCase() === availabilityFilter.toLowerCase());
+
+        return matchesSpecialty && matchesQuery && matchesExperience && matchesFee && matchesAvailability;
       }),
-    [doctors, specialty, query],
+    [availabilityFilter, doctors, experienceFilter, feeFilter, specialty, query],
   );
+
+  function resetDoctorFilters() {
+    setSpecialty("All");
+    setExperienceFilter("All");
+    setFeeFilter("All");
+    setAvailabilityFilter("All");
+    setQuery("");
+  }
 
   return (
     <DashboardFrame title="Doctor Consultation" subtitle="Find verified specialists, compare consultation fees, and book an appointment that fits your schedule.">
@@ -998,12 +1234,62 @@ export function WebDoctorsScreen() {
             aria-label="Search doctors, specialties, hospital"
             placeholder="Search doctors, specialties, hospital..."
           />
-          <div style={styles.chipRow}>
-            {specialties.slice(0, 8).map((item) => (
-              <button key={item} style={{ ...styles.filterChip, ...(specialty === item ? styles.filterChipActive : {}) }} onClick={() => setSpecialty(item)}>
-                {item}
+          <div style={styles.categoryScroller}>
+            {categoryOptions.slice(0, 8).map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className="hover-lift"
+                style={{ ...styles.categoryCard, ...(specialty === item.name ? styles.categoryCardActive : {}) }}
+                onClick={() => setSpecialty(item.name)}
+              >
+                <span style={{ ...styles.categoryIconWrap, ...(specialty === item.name ? styles.categoryIconWrapActive : {}) }}>
+                  <span style={styles.categoryIconGlyph}>
+                    <DoctorCategoryIconMark iconKey={item.iconKey} />
+                  </span>
+                </span>
+                <span style={{ ...styles.categoryLabel, ...(specialty === item.name ? styles.categoryLabelActive : {}) }}>{item.name}</span>
               </button>
             ))}
+          </div>
+          <div style={styles.filterToolbar}>
+            <button type="button" className="hover-lift" style={styles.filterButton} onClick={resetDoctorFilters}>
+              <span style={styles.filterButtonGlyph}>☰</span>
+              <span>Filter</span>
+            </button>
+            <div style={styles.filterToolbarChips}>
+              <FilterSelectField
+                ariaLabel="Filter by experience"
+                value={experienceFilter}
+                onChange={(value) => setExperienceFilter(value as "All" | "0-5" | "5-10" | "10+")}
+              >
+                <option value="All">Experience</option>
+                <option value="0-5">0-5 years</option>
+                <option value="5-10">5-10 years</option>
+                <option value="10+">10+ years</option>
+              </FilterSelectField>
+              <FilterSelectField
+                ariaLabel="Filter by fees"
+                value={feeFilter}
+                onChange={(value) => setFeeFilter(value as "All" | "0-500" | "501-1000" | "1000+")}
+              >
+                <option value="All">Fees</option>
+                <option value="0-500">Up to ₹500</option>
+                <option value="501-1000">₹501-₹1000</option>
+                <option value="1000+">₹1000+</option>
+              </FilterSelectField>
+              <FilterSelectField
+                ariaLabel="Filter by availability"
+                value={availabilityFilter}
+                onChange={(value) => setAvailabilityFilter(value as "All" | "Clinic" | "Video" | "Voice" | "Chat")}
+              >
+                <option value="All">Availability</option>
+                <option value="Clinic">Clinic</option>
+                <option value="Video">Video</option>
+                <option value="Voice">Voice</option>
+                <option value="Chat">Chat</option>
+              </FilterSelectField>
+            </div>
           </div>
         </div>
       </section>
@@ -1011,7 +1297,7 @@ export function WebDoctorsScreen() {
       {loading ? <DoctorGridSkeleton /> : null}
       {!loading && loadError ? <div style={styles.noticeCard}>Unable to load doctors right now. Please refresh the page.</div> : null}
 
-      <div className="responsive-grid-2col" style={styles.doctorGrid}>
+          <div className="responsive-grid-2col" style={styles.doctorGrid}>
         {loading ? null : filtered.map((doctor) => (
           <Link key={doctor.id} href={`/doctors/${doctor.id}`} className="hover-lift" style={styles.doctorCard}>
             <DoctorImage
@@ -1032,8 +1318,9 @@ export function WebDoctorsScreen() {
               </p>
               <div style={styles.doctorFooter}>
                 <strong>{doctor.fee > 0 ? formatMoney(doctor.fee) : "Fee on request"}</strong>
-                <span style={styles.availableLabel}>Verified profile</span>
+                <span style={styles.availableLabel}>{doctor.availability[0] || "Verified profile"}</span>
               </div>
+              <div style={styles.doctorCardAction}>Book Appointment</div>
             </div>
           </Link>
         ))}
@@ -4554,17 +4841,148 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     flexWrap: "wrap",
   },
+  categoryScroller: {
+    display: "flex",
+    gap: 12,
+    overflowX: "auto",
+    paddingBottom: 6,
+    alignItems: "flex-start",
+  },
+  categoryCard: {
+    flex: "0 0 132px",
+    width: 132,
+    minWidth: 132,
+    maxWidth: 132,
+    padding: "8px 10px 0",
+    border: "none",
+    background: "transparent",
+    color: "var(--ink-soft)",
+    display: "grid",
+    justifyItems: "center",
+    gap: 8,
+    cursor: "pointer",
+  },
+  categoryCardActive: {
+    color: "var(--brand)",
+  },
+  categoryIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    background: "var(--surface-strong)",
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "var(--shadow-card)",
+    transition: "var(--motion-fast)",
+  },
+  categoryIconWrapActive: {
+    background: "var(--brand-tint)",
+    borderColor: "var(--brand)",
+    boxShadow: "var(--shadow-brand)",
+  },
+  categoryIconGlyph: {
+    fontSize: "1.8rem",
+    lineHeight: 1,
+    fontWeight: 800,
+    color: "currentColor",
+  },
+  categoryLabel: {
+    width: "100%",
+    fontSize: "0.9rem",
+    fontWeight: 700,
+    lineHeight: 1.25,
+    textAlign: "center",
+    minHeight: 48,
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+  },
+  categoryLabelActive: {
+    color: "var(--brand)",
+  },
+  filterToolbar: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  filterToolbarChips: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    flex: 1,
+  },
+  filterButton: {
+    minHeight: 44,
+    padding: "0 18px",
+    borderRadius: "var(--radius-pill)",
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--ink)",
+    fontWeight: 800,
+    fontSize: "0.95rem",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    cursor: "pointer",
+  },
+  filterButtonGlyph: {
+    fontSize: "1rem",
+    lineHeight: 1,
+  },
   filterChip: {
     minHeight: 40,
     padding: "0 16px",
     borderRadius: "var(--radius-pill)",
-    border: "1.5px solid var(--line)",
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
     background: "var(--surface-strong)",
     color: "var(--ink-soft)",
     fontWeight: 700,
     fontSize: "0.86rem",
     cursor: "pointer",
     transition: "var(--motion-fast)",
+  },
+  filterSelectWrap: {
+    position: "relative",
+    minWidth: 156,
+    flex: "0 0 auto",
+  },
+  filterSelect: {
+    width: "100%",
+    minHeight: 44,
+    padding: "0 46px 0 18px",
+    borderRadius: "var(--radius-pill)",
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
+    background: "var(--surface-strong)",
+    color: "var(--ink)",
+    fontWeight: 700,
+    fontSize: "0.94rem",
+    cursor: "pointer",
+    appearance: "none",
+    boxShadow: "var(--shadow-card)",
+    outline: "none",
+  },
+  filterSelectChevron: {
+    position: "absolute",
+    top: "50%",
+    right: 18,
+    transform: "translateY(-50%)",
+    fontSize: "0.95rem",
+    lineHeight: 1,
+    color: "var(--ink-soft)",
+    pointerEvents: "none",
   },
   filterChipActive: {
     background: "var(--brand)",
@@ -4613,6 +5031,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     alignContent: "start",
     gap: 5,
+    minWidth: 0,
   },
   doctorTopline: {
     display: "flex",
@@ -4652,6 +5071,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
+    flexWrap: "wrap",
     marginTop: 4,
     color: "var(--brand-deep)",
   },
@@ -4663,6 +5083,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--success)",
     fontWeight: 800,
     fontSize: "0.8rem",
+  },
+  doctorCardAction: {
+    minHeight: 44,
+    marginTop: 8,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "#c8efd9",
+    background: "#ffffff",
+    color: "#1b9b6a",
+    fontWeight: 800,
+    fontSize: "0.92rem",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   detailHeroGrid: {},
   profileCard: {

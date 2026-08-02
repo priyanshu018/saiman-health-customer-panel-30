@@ -21,6 +21,14 @@ export type DoctorSummary = {
   availability: string[];
 };
 
+export type DoctorSpecializationSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  iconKey: string;
+  isActive: boolean;
+};
+
 export type PharmacySummary = {
   id: string;
   name: string;
@@ -238,6 +246,79 @@ function formatAvailability(row: Record<string, unknown>) {
   return items.length ? items : ["Contact for availability"];
 }
 
+const FALLBACK_DOCTOR_SPECIALIZATIONS: DoctorSpecializationSummary[] = [
+  { id: "general-physician", name: "General Physician", description: null, iconKey: "person", isActive: true },
+  { id: "cardiologist", name: "Cardiologist", description: null, iconKey: "favorite-border", isActive: true },
+  { id: "dermatologist", name: "Dermatologist", description: null, iconKey: "face", isActive: true },
+  { id: "paediatrician", name: "Paediatrician", description: null, iconKey: "child-care", isActive: true },
+  { id: "neurologist", name: "Neurologist", description: null, iconKey: "psychology", isActive: true },
+  { id: "gynaecologist", name: "Gynaecologist", description: null, iconKey: "pregnant-woman", isActive: true },
+  { id: "orthopaedic", name: "Orthopaedic", description: null, iconKey: "healing", isActive: true },
+  { id: "ent-specialist", name: "ENT Specialist", description: null, iconKey: "hearing", isActive: true },
+];
+
+const DOCTOR_SPECIALIZATION_ICON_BY_NAME: Record<string, string> = {
+  All: "medical-services",
+  "General Physician": "person",
+  Cardiologist: "favorite-border",
+  Dermatologist: "face",
+  Paediatrician: "child-care",
+  Neurologist: "psychology",
+  Gynaecologist: "pregnant-woman",
+  Orthopaedic: "healing",
+  "ENT Specialist": "hearing",
+  Ophthalmologist: "visibility",
+  Dentist: "medical-services",
+  Psychiatrist: "self-improvement",
+  Neurology: "psychology",
+  Cardiology: "favorite-border",
+  Orthopedics: "healing",
+  Ophthalmology: "visibility",
+  ENT: "hearing",
+  Gastroenterology: "vaccines",
+  Pulmonology: "air",
+  Oncology: "biotech",
+  Urology: "water-drop",
+  Nephrology: "water-drop",
+  Pathology: "science",
+  Dental: "medical-services",
+  Dermatology: "face-retouching-natural",
+  Radiology: "monitor-heart",
+  Emergency: "emergency",
+  Paediatrics: "child-care",
+  Gynaecology: "pregnant-woman",
+};
+
+const SUPPORTED_DOCTOR_SPECIALIZATION_ICON_KEYS = new Set([
+  "medical-services",
+  "person",
+  "favorite-border",
+  "face",
+  "face-retouching-natural",
+  "child-care",
+  "psychology",
+  "pregnant-woman",
+  "healing",
+  "hearing",
+  "visibility",
+  "self-improvement",
+  "vaccines",
+  "air",
+  "biotech",
+  "water-drop",
+  "science",
+  "monitor-heart",
+  "emergency",
+]);
+
+function normalizeDoctorSpecializationIcon(name: string, iconKey?: string | null) {
+  const normalizedIconKey = iconKey?.trim();
+  if (normalizedIconKey && SUPPORTED_DOCTOR_SPECIALIZATION_ICON_KEYS.has(normalizedIconKey)) {
+    return normalizedIconKey;
+  }
+  return DOCTOR_SPECIALIZATION_ICON_BY_NAME[name] || "medical-services";
+}
+
 type PharmacyApprovalRow = {
   id: string;
   name: string | null;
@@ -410,6 +491,34 @@ export async function fetchApprovedDoctors() {
       availability: formatAvailability(row as Record<string, unknown>),
     };
   }) satisfies DoctorSummary[];
+}
+
+export async function fetchDoctorSpecializations(options?: { includeInactive?: boolean }) {
+  const supabase = client();
+
+  try {
+    const query = supabase
+      .from("doctor_specializations")
+      .select("id,name,description,icon_key,is_active")
+      .order("name", { ascending: true });
+
+    const { data, error } = options?.includeInactive ? await query : await query.eq("is_active", true);
+    if (error) throw new Error(error.message);
+
+    if (!data?.length) {
+      return FALLBACK_DOCTOR_SPECIALIZATIONS.filter((item) => options?.includeInactive || item.isActive);
+    }
+
+    return data.map((row) => ({
+      id: String(row.id),
+      name: text(row.name, "General Physician"),
+      description: text(row.description) || null,
+      iconKey: normalizeDoctorSpecializationIcon(text(row.name, "General Physician"), text(row.icon_key)),
+      isActive: row.is_active !== false,
+    })) satisfies DoctorSpecializationSummary[];
+  } catch {
+    return FALLBACK_DOCTOR_SPECIALIZATIONS.filter((item) => options?.includeInactive || item.isActive);
+  }
 }
 
 export async function fetchApprovedPharmacies() {
