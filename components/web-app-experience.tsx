@@ -1877,7 +1877,6 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
       <span style={styles.productMeta}>{product.subtitle} · {product.inStock} in stock</span>
       <div style={styles.priceRow}>
         <strong>{formatMoney(product.price)}</strong>
-        <span>{product.pharmacyName}</span>
       </div>
       <div style={styles.stockText}>Ready to add to cart</div>
       {line ? (
