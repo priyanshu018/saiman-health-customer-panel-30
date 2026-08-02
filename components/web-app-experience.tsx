@@ -138,6 +138,34 @@ function isEmergencyVehicle(vehicleType?: string | null) {
   return type.includes("icu") || type.includes("critical") || type.includes("advanced") || type.includes("acls");
 }
 
+function rentalCategoryLabel(value: string) {
+  return value.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function rentalCategoryIcon(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("oxygen") || normalized.includes("respir")) return "♡";
+  if (normalized.includes("hrc")) return "◭";
+  if (normalized.includes("bed")) return "▤";
+  if (normalized.includes("pulse") || normalized.includes("heart")) return "♥";
+  if (normalized.includes("wheel")) return "◌";
+  return "▦";
+}
+
+function hospitalOriginalPriceValue(price: number) {
+  return price + Math.max(1200, Math.round(price * 0.28));
+}
+
+function hospitalDiscountValue(price: number) {
+  const original = hospitalOriginalPriceValue(price);
+  if (original <= 0) return 0;
+  return Math.max(0, Math.round(((original - price) / original) * 100));
+}
+
+function hospitalTaxesValue(price: number) {
+  return Math.max(99, Math.round(price * 0.06));
+}
+
 function DoctorCategoryIconMark({ iconKey }: { iconKey: string }) {
   const key = iconKey.trim().toLowerCase();
   const common = {
@@ -2845,9 +2873,12 @@ export function WebLabBookingsScreen() {
 
 export function WebHospitalsScreen() {
   const [services, setServices] = useState<HospitalServiceSummary[]>([]);
+  const [hospitalBanners, setHospitalBanners] = useState<CmsBannerSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"nearby" | "low-high" | "high-low">("nearby");
 
   useEffect(() => {
     fetchApprovedHospitalServices()
@@ -2856,31 +2887,97 @@ export function WebHospitalsScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      services.filter((service) => {
-        const haystack = `${service.providerName} ${service.providerCity} ${service.providerAddress} ${service.serviceName} ${service.category}`.toLowerCase();
-        return haystack.includes(query.toLowerCase());
-      }),
-    [services, query],
-  );
+  useEffect(() => {
+    let active = true;
+    fetchHomeBanners("Hospital Banner")
+      .then((items) => {
+        if (active) setHospitalBanners(items);
+      })
+      .catch(() => {
+        if (active) setHospitalBanners([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => subscribeHomeBanners(setHospitalBanners, "Hospital Banner"), []);
+
+  const filtered = useMemo(() => {
+    const rows = services.filter((service) => {
+      const haystack = `${service.providerName} ${service.providerCity} ${service.providerAddress} ${service.serviceName} ${service.category}`.toLowerCase();
+      return haystack.includes(query.toLowerCase());
+    });
+
+    if (sortOrder === "low-high") {
+      rows.sort((a, b) => a.price - b.price || a.providerName.localeCompare(b.providerName));
+    } else if (sortOrder === "high-low") {
+      rows.sort((a, b) => b.price - a.price || a.providerName.localeCompare(b.providerName));
+    }
+
+    return rows;
+  }, [services, query, sortOrder]);
+
+  const featuredServices = query.trim() || showAll ? filtered : filtered.slice(0, 4);
+  const activeHospitalBanner = hospitalBanners[0] ?? null;
 
   return (
     <DashboardFrame title="Hospitals & Surgeries" subtitle="Browse verified hospitals and surgery centers, compare specialties, and request a consultation.">
-      <section style={styles.heroWideCard}>
-        <span style={styles.bluePill}>Hospital Discovery</span>
-        <h2 style={styles.heroHeadingAlt}>Compare hospitals, specialties, and treatment access in one place.</h2>
-        <p style={styles.heroCopy}>Compare hospital specialties, bed availability, and locations before requesting a consultation.</p>
+      <section style={styles.hospitalHeroShell}>
+        <div style={styles.hospitalHeroTop}>
+          <div style={styles.hospitalHeroBrand}>
+            <div style={styles.hospitalHeroLogo}>♥</div>
+            <div>
+              <h2 style={styles.hospitalHeroBrandTitle}>Austy Healthcare</h2>
+              <p style={styles.hospitalHeroBrandSub}>Care You Can Trust</p>
+              <div style={styles.hospitalHeroLocationChip}>📍 D178, Industrial Area...</div>
+            </div>
+          </div>
+          <div style={styles.hospitalHeroNotif}>◌</div>
+        </div>
+        <div style={styles.hospitalHeroBody}>
+          <div>
+            <h3 style={styles.hospitalHeroHeading}>Find the Right <span style={styles.hospitalHeroAccent}>Hospital</span></h3>
+            <p style={styles.hospitalHeroCopy}>We help you get quality treatment at the best price.</p>
+          </div>
+          <MarketplaceImage
+            src={APP_FALLBACK_IMAGES.hospital}
+            fallbackSrc={APP_FALLBACK_IMAGES.hospital}
+            alt="Hospital hero"
+            label="H"
+            style={styles.hospitalHeroVisual}
+            textStyle={styles.visualInitials}
+          />
+        </div>
       </section>
 
       <section style={styles.sectionBlock}>
         <input
-          style={styles.searchInput}
+          style={{ ...styles.searchInput, ...styles.hospitalSearchInput }}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (event.target.value.trim()) setShowAll(true);
+          }}
           aria-label="Search hospitals, surgery services, city, address"
           placeholder="Search hospitals, surgery services, city, address..."
         />
+        <div style={styles.hospitalLocationFilter}>📍 D178, Industrial Area, Industrial Area, Sector 74...</div>
+        <div style={styles.hospitalSortRow}>
+          <button type="button" onClick={() => setSortOrder("nearby")} style={{ ...styles.hospitalSortChip, ...(sortOrder === "nearby" ? styles.hospitalSortChipActive : {}) }}>
+            Nearby ▾
+          </button>
+          <button type="button" onClick={() => setSortOrder(sortOrder === "low-high" ? "high-low" : "low-high")} style={{ ...styles.hospitalSortChip, ...styles.hospitalSortChipWide, ...(sortOrder !== "nearby" ? styles.hospitalSortChipActive : {}) }}>
+            {sortOrder === "high-low" ? "Price: High to Low" : "Price: Low to High"}
+          </button>
+          <button type="button" style={styles.hospitalSortChip}>☷ Filters</button>
+        </div>
+      </section>
+
+      <section style={styles.hospitalBannerCard}>
+        <span style={styles.hospitalBannerBadge}>{activeHospitalBanner?.position || "Hospital Banner"}</span>
+        <h2 style={styles.hospitalBannerTitle}>{activeHospitalBanner?.title || "Quality treatment at the best price."}</h2>
+        <p style={styles.hospitalBannerCopy}>{activeHospitalBanner?.description || "Publish Hospital Banner in Super Admin CMS to control this space."}</p>
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
@@ -2888,38 +2985,54 @@ export function WebHospitalsScreen() {
         <div style={styles.noticeCard}>{loadError ? "Unable to load hospitals right now. Please refresh the page." : "No approved hospital services available yet."}</div>
       ) : null}
 
-      <div style={styles.serviceTileGrid}>
-        {loading ? null : filtered.map((service) => (
-          <Link key={service.id} href={`/hospitals/${service.id}`} className="hover-lift" style={styles.infoTileCard}>
-            <MarketplaceImage
-              src={service.imageUrl}
-              fallbackSrc={APP_FALLBACK_IMAGES.hospital}
-              alt={service.serviceName}
-              label={getInitials(service.serviceName)}
-              style={styles.tileVisual}
-              textStyle={styles.visualInitials}
-            />
-            <div style={styles.tileMetaGrid}>
-              <span style={styles.blogTag}>Saiman Verified</span>
-              <span>{service.totalBeds ? `${service.totalBeds} beds` : "Beds on request"}</span>
+      {!loading ? (
+        <section style={styles.hospitalDiscoveryShell}>
+          <div style={styles.sectionHead}>
+            <div>
+              <h2 style={styles.sectionTitle}>Hospitals</h2>
+              <p style={styles.labCompareSectionCopy}>{filtered.length} hospital service{filtered.length === 1 ? "" : "s"} available</p>
             </div>
-            <h3 style={styles.tileTitle}>{service.providerName}</h3>
-            <p style={styles.tileCopy}>{service.providerCity}</p>
-            <strong style={styles.serviceNameText}>{service.serviceName}</strong>
-            <div style={styles.tileMetaGrid}>
-              <span>{service.category}</span>
-              <span>{service.providerAddress}</span>
-            </div>
-            <div style={styles.tileFooter}>
-              <div style={styles.priceStack}>
-                <strong>{service.price > 0 ? formatMoney(service.price) : "Fee on request"}</strong>
-                {service.basePrice > service.price ? <span style={styles.strikeText}>{formatMoney(service.basePrice)}</span> : null}
-              </div>
-              <span style={styles.availableLabel}>Request consultation</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+            <button type="button" onClick={() => setShowAll((value) => !value)} style={styles.hospitalViewAllButton}>
+              {showAll || query.trim() ? "Show Less" : "View All"} →
+            </button>
+          </div>
+          <div style={styles.hospitalCardGrid}>
+            {featuredServices.map((service) => {
+              const originalPrice = hospitalOriginalPriceValue(service.price);
+              const discount = hospitalDiscountValue(service.price);
+              const taxes = hospitalTaxesValue(service.price);
+              return (
+                <Link key={service.id} href={`/hospitals/${service.id}`} className="hover-lift" style={styles.hospitalDiscoveryCard}>
+                  <div style={styles.hospitalDiscoveryImageWrap}>
+                    <MarketplaceImage
+                      src={service.imageUrl}
+                      fallbackSrc={APP_FALLBACK_IMAGES.hospital}
+                      alt={service.serviceName}
+                      label={getInitials(service.serviceName)}
+                      style={styles.hospitalDiscoveryImage}
+                      textStyle={styles.visualInitials}
+                    />
+                    <span style={styles.hospitalDiscoveryVerified}>✚ Austy Verified</span>
+                  </div>
+                  <div style={styles.hospitalDiscoveryMetaRow}>
+                    <span style={styles.hospitalDiscoveryRating}>★ 4.6 (0)</span>
+                  </div>
+                  <h3 style={styles.hospitalDiscoveryName}>{service.providerName}</h3>
+                  <p style={styles.hospitalDiscoveryCity}>{service.providerCity}</p>
+                  <strong style={styles.hospitalDiscoveryService}>{service.serviceName}</strong>
+                  <div style={styles.hospitalDiscoveryPriceRow}>
+                    <strong>{formatMoney(service.price)}</strong>
+                    <span style={styles.strikeText}>{formatMoney(originalPrice)}</span>
+                  </div>
+                  <div style={styles.hospitalDiscoveryDiscount}>{discount}% OFF</div>
+                  <div style={styles.hospitalDiscoveryTaxes}>+ {formatMoney(taxes)} taxes & fees</div>
+                  <div style={styles.hospitalDiscoveryBookingPill}>▣ Instant booking</div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -3387,6 +3500,9 @@ export function WebRentalEquipmentScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [showAll, setShowAll] = useState(false);
+  const [wishlist, setWishlist] = useState<string[]>([]);
 
   useEffect(() => {
     fetchApprovedRentalEquipment()
@@ -3395,31 +3511,67 @@ export function WebRentalEquipmentScreen() {
       .finally(() => setLoading(false));
   }, []);
 
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set(items.map((item) => item.category))).map((category) => ({
+      id: category,
+      label: rentalCategoryLabel(category),
+      icon: rentalCategoryIcon(category),
+    }));
+    return [{ id: "all", label: "All", icon: "▦" }, ...unique];
+  }, [items]);
+
   const filtered = useMemo(
     () =>
       items.filter((item) => {
+        const matchCategory = activeCategory === "all" || item.category === activeCategory;
         const haystack = `${item.name} ${item.category} ${item.providerName} ${item.city} ${item.brand} ${item.model}`.toLowerCase();
-        return haystack.includes(query.toLowerCase());
+        return matchCategory && haystack.includes(query.toLowerCase());
       }),
-    [items, query],
+    [activeCategory, items, query],
   );
+
+  const visibleItems = query.trim() || showAll ? filtered : filtered.slice(0, 6);
 
   return (
     <DashboardFrame title="Rental Equipment" subtitle="Browse patient-care equipment, compare rental pricing, and choose the right support for home recovery.">
-      <section style={styles.heroWideCard}>
-        <span style={styles.bluePill}>Rental Equipment</span>
-        <h2 style={styles.heroHeadingAlt}>Wheelchairs, patient beds, supports, and home-care gear in one place.</h2>
-        <p style={styles.heroCopy}>Compare daily, weekly, and monthly rental pricing, security deposits, and provider details before you book.</p>
+      <section style={styles.rentalHeaderShell}>
+        <div style={styles.rentalHeaderRow}>
+          <div>
+            <h2 style={styles.rentalHeaderTitle}>Medical Equipment Rent</h2>
+            <div style={styles.rentalLocationChip}>📍 D178, Industrial Area, In...</div>
+          </div>
+          <div style={styles.rentalHeaderBell}>◌</div>
+        </div>
       </section>
 
       <section style={styles.sectionBlock}>
-        <input
-          style={styles.searchInput}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Search equipment, category, city"
-          placeholder="Search equipment, category, city..."
-        />
+        <div style={styles.rentalSearchBar}>
+          <span style={styles.rentalSearchIcon}>⌕</span>
+          <input
+            style={styles.rentalSearchInput}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (event.target.value.trim()) setShowAll(true);
+            }}
+            aria-label="Search equipment, category, city"
+            placeholder="Search equipment (e.g. oxygen concentrator)"
+          />
+          <button type="button" style={styles.rentalFilterButton}>☷</button>
+        </div>
+        <div style={styles.rentalCategoryRow}>
+          {categories.map((category) => (
+            <button
+              type="button"
+              key={category.id}
+              onClick={() => setActiveCategory(category.id)}
+              style={{ ...styles.rentalCategoryChip, ...(activeCategory === category.id ? styles.rentalCategoryChipActive : {}) }}
+            >
+              <span>{category.icon}</span>
+              <span>{category.label}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       {loading ? <TileGridSkeleton /> : null}
@@ -3427,36 +3579,58 @@ export function WebRentalEquipmentScreen() {
         <div style={styles.noticeCard}>{loadError ? "Unable to load rental equipment right now. Please refresh the page." : "No approved rental equipment available yet."}</div>
       ) : null}
 
-      <div style={styles.serviceTileGrid}>
-        {loading ? null : filtered.map((item) => (
-          <Link key={item.id} href={`/rental-equipment/${item.id}`} className="hover-lift" style={styles.infoTileCard}>
-            <MarketplaceImage
-              src={item.imageUrl}
-              fallbackSrc="/service-rental.svg"
-              alt={item.name}
-              label={getInitials(item.name)}
-              style={styles.tileVisual}
-              textStyle={styles.visualInitials}
-              fit="contain"
-            />
-            <span style={styles.blogTag}>{item.category}</span>
-            <h3 style={styles.tileTitle}>{item.name}</h3>
-            <p style={styles.tileCopy}>{item.providerName}</p>
-            <div style={styles.tileMetaGrid}>
-              <span>{item.city}</span>
-              <span>{item.stock > 0 ? `${item.stock} in stock` : "Check availability"}</span>
-            </div>
-            <div style={styles.priceStack}>
-              <strong>{formatMoney(item.price)} / day</strong>
-              <span>{formatMoney(item.weeklyPrice)} weekly · {formatMoney(item.monthlyPrice)} monthly</span>
-            </div>
-            <div style={styles.tileFooter}>
-              <span>Deposit {formatMoney(item.deposit)}</span>
-              <span style={styles.availableLabel}>Request rental</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {!loading ? (
+        <section style={styles.rentalDiscoveryShell}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Popular Equipment</h2>
+            <button type="button" onClick={() => setShowAll((value) => !value)} style={styles.linkButtonInline}>
+              {showAll || query.trim() ? "Show Less" : "See All"}
+            </button>
+          </div>
+          <div style={styles.rentalCardGrid}>
+            {visibleItems.map((item) => {
+              const wishlisted = wishlist.includes(item.id);
+              return (
+                <Link key={item.id} href={`/rental-equipment/${item.id}`} className="hover-lift" style={styles.rentalDiscoveryCard}>
+                  <div style={styles.rentalDiscoveryImageWrap}>
+                    <MarketplaceImage
+                      src={item.imageUrl}
+                      fallbackSrc="/service-rental.svg"
+                      alt={item.name}
+                      label={getInitials(item.name)}
+                      style={styles.rentalDiscoveryImage}
+                      textStyle={styles.visualInitials}
+                      fit="contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setWishlist((current) => (
+                          current.includes(item.id) ? current.filter((value) => value !== item.id) : [...current, item.id]
+                        ));
+                      }}
+                      style={styles.rentalWishlistButton}
+                    >
+                      {wishlisted ? "♥" : "♡"}
+                    </button>
+                  </div>
+                  <div style={styles.rentalDiscoveryBody}>
+                    <h3 style={styles.rentalDiscoveryName}>{item.name}</h3>
+                    <p style={styles.rentalDiscoveryDesc}>{item.description}</p>
+                    <div style={styles.rentalDiscoveryProvider}>{item.providerName} · {item.city}</div>
+                    <div style={styles.rentalDiscoveryPrice}>
+                      <strong>{formatMoney(item.price)}</strong>
+                      <span>/ day</span>
+                    </div>
+                    <div style={styles.rentalRentButton}>Rent Now</div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -6576,6 +6750,490 @@ const styles: Record<string, React.CSSProperties> = {
     color: themeStyles.muted,
     fontWeight: 800,
     fontSize: "1rem",
+  },
+  hospitalHeroShell: {
+    display: "grid",
+    gap: 24,
+    padding: "28px",
+    borderRadius: 34,
+    background: "linear-gradient(180deg, #eef3ff 0%, #f6f8ff 100%)",
+    border: `1px solid ${themeStyles.line}`,
+    boxShadow: "var(--shadow-card)",
+  },
+  hospitalHeroTop: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    flexWrap: "wrap",
+  },
+  hospitalHeroBrand: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+  },
+  hospitalHeroLogo: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    border: `1.5px solid ${themeStyles.line}`,
+    background: "#fff",
+    color: themeStyles.brand,
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.6rem",
+  },
+  hospitalHeroBrandTitle: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "2rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+  },
+  hospitalHeroBrandSub: {
+    margin: "4px 0 0",
+    color: themeStyles.muted,
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  hospitalHeroLocationChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    marginTop: 10,
+    padding: "10px 16px",
+    borderRadius: 999,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+  },
+  hospitalHeroNotif: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    background: "#fff",
+    border: `1.5px solid ${themeStyles.line}`,
+    display: "grid",
+    placeItems: "center",
+    color: themeStyles.brandDeep,
+    fontSize: "1.5rem",
+  },
+  hospitalHeroBody: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 320px",
+    gap: 22,
+    alignItems: "center",
+  },
+  hospitalHeroHeading: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "clamp(2.5rem, 2rem + 1vw, 4.5rem)",
+    lineHeight: 0.98,
+    letterSpacing: "-0.07em",
+    fontWeight: 900,
+  },
+  hospitalHeroAccent: {
+    color: themeStyles.brand,
+  },
+  hospitalHeroCopy: {
+    margin: "18px 0 0",
+    maxWidth: 440,
+    color: themeStyles.inkSoft,
+    fontSize: "1.25rem",
+    lineHeight: 1.55,
+  },
+  hospitalHeroVisual: {
+    height: 290,
+    borderRadius: 34,
+    border: "6px solid #fff",
+    background: "linear-gradient(135deg, #dae5ff 0%, #fff 100%)",
+    overflow: "hidden",
+  },
+  hospitalSearchInput: {
+    minHeight: 66,
+    borderRadius: 24,
+    fontSize: "1.25rem",
+    paddingLeft: 22,
+  },
+  hospitalLocationFilter: {
+    marginTop: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    padding: "12px 18px",
+    borderRadius: 999,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+    fontSize: "1rem",
+  },
+  hospitalSortRow: {
+    display: "flex",
+    gap: 12,
+    marginTop: 18,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  hospitalSortChip: {
+    minHeight: 52,
+    padding: "0 18px",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "#d5defa",
+    background: "#fff",
+    color: themeStyles.brandDeep,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    fontSize: "1rem",
+    cursor: "pointer",
+  },
+  hospitalSortChipWide: {
+    minWidth: 210,
+  },
+  hospitalSortChipActive: {
+    borderColor: themeStyles.brand,
+    color: themeStyles.brand,
+    boxShadow: "0 12px 28px rgba(47, 89, 255, 0.12)",
+  },
+  hospitalBannerCard: {
+    display: "grid",
+    gap: 16,
+    padding: "30px 34px",
+    borderRadius: 32,
+    background: "linear-gradient(135deg, #3e59ec 0%, #4f63f0 100%)",
+    color: "#fff",
+    boxShadow: "0 18px 42px rgba(63, 89, 236, 0.2)",
+  },
+  hospitalBannerBadge: {
+    display: "inline-flex",
+    width: "fit-content",
+    padding: "10px 18px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    fontWeight: 900,
+  },
+  hospitalBannerTitle: {
+    margin: 0,
+    fontSize: "clamp(2rem, 1.8rem + 0.8vw, 3rem)",
+    lineHeight: 1.04,
+    letterSpacing: "-0.04em",
+    fontWeight: 900,
+  },
+  hospitalBannerCopy: {
+    margin: 0,
+    maxWidth: 720,
+    color: "rgba(255,255,255,0.92)",
+    fontSize: "1.12rem",
+    lineHeight: 1.55,
+    fontWeight: 700,
+  },
+  hospitalDiscoveryShell: {
+    display: "grid",
+    gap: 20,
+    padding: 24,
+    borderRadius: 30,
+    border: `1px solid ${themeStyles.line}`,
+    background: themeStyles.panel,
+    boxShadow: "var(--shadow-card)",
+  },
+  hospitalViewAllButton: {
+    minHeight: 52,
+    padding: "0 20px",
+    borderRadius: 18,
+    border: "none",
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "1rem",
+    cursor: "pointer",
+  },
+  hospitalCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: 18,
+  },
+  hospitalDiscoveryCard: {
+    display: "grid",
+    gap: 12,
+    padding: 18,
+    borderRadius: 28,
+    border: `1px solid ${themeStyles.line}`,
+    background: "#fff",
+    boxShadow: "var(--shadow-card)",
+  },
+  hospitalDiscoveryImageWrap: {
+    position: "relative",
+  },
+  hospitalDiscoveryImage: {
+    height: 210,
+    borderRadius: 26,
+    background: "linear-gradient(135deg, #eef2ff 0%, #fff 100%)",
+    overflow: "hidden",
+  },
+  hospitalDiscoveryVerified: {
+    position: "absolute",
+    left: 16,
+    top: 16,
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "8px 14px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.94)",
+    color: themeStyles.brandDeep,
+    fontWeight: 800,
+  },
+  hospitalDiscoveryMetaRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  hospitalDiscoveryRating: {
+    color: "#ef4444",
+    fontWeight: 900,
+    fontSize: "1rem",
+  },
+  hospitalDiscoveryName: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "1.85rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.05em",
+    fontWeight: 900,
+  },
+  hospitalDiscoveryCity: {
+    margin: 0,
+    color: themeStyles.inkSoft,
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  hospitalDiscoveryService: {
+    color: "#4f5d87",
+    fontSize: "1rem",
+    lineHeight: 1.35,
+    fontWeight: 800,
+  },
+  hospitalDiscoveryPriceRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 12,
+    color: themeStyles.brandDeep,
+    fontSize: "1.35rem",
+    fontWeight: 900,
+  },
+  hospitalDiscoveryDiscount: {
+    color: "#10b981",
+    fontSize: "0.95rem",
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  hospitalDiscoveryTaxes: {
+    color: themeStyles.inkSoft,
+    fontSize: "0.95rem",
+    fontWeight: 700,
+  },
+  hospitalDiscoveryBookingPill: {
+    display: "inline-flex",
+    width: "fit-content",
+    alignItems: "center",
+    padding: "10px 16px",
+    borderRadius: 999,
+    background: "#ecfdf5",
+    color: "#15803d",
+    fontWeight: 900,
+  },
+  rentalHeaderShell: {
+    padding: "14px 4px 0",
+  },
+  rentalHeaderRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  rentalHeaderTitle: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "2rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.05em",
+    fontWeight: 900,
+  },
+  rentalLocationChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    marginTop: 10,
+    padding: "10px 16px",
+    borderRadius: 999,
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    fontWeight: 800,
+  },
+  rentalHeaderBell: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    border: `1.5px solid ${themeStyles.line}`,
+    background: "#fff",
+    display: "grid",
+    placeItems: "center",
+    color: themeStyles.brandDeep,
+    fontSize: "1.4rem",
+  },
+  rentalSearchBar: {
+    display: "grid",
+    gridTemplateColumns: "26px minmax(0, 1fr) 68px",
+    gap: 10,
+    alignItems: "center",
+    minHeight: 78,
+    padding: "0 8px 0 18px",
+    borderRadius: 24,
+    border: `1px solid ${themeStyles.line}`,
+    background: "#f5f8ff",
+  },
+  rentalSearchIcon: {
+    color: "#a8b4d0",
+    fontSize: "1.4rem",
+  },
+  rentalSearchInput: {
+    minHeight: 56,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    color: themeStyles.brandDeep,
+    fontSize: "1.15rem",
+  },
+  rentalFilterButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    border: "none",
+    background: themeStyles.brand,
+    color: "#fff",
+    fontSize: "1.3rem",
+    cursor: "pointer",
+  },
+  rentalCategoryRow: {
+    display: "flex",
+    gap: 12,
+    marginTop: 16,
+    overflowX: "auto",
+    paddingBottom: 4,
+  },
+  rentalCategoryChip: {
+    minHeight: 52,
+    padding: "0 18px",
+    borderRadius: 999,
+    border: "none",
+    background: "#eef3ff",
+    color: themeStyles.brand,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    fontWeight: 800,
+    fontSize: "1rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  rentalCategoryChipActive: {
+    background: themeStyles.brand,
+    color: "#fff",
+  },
+  rentalDiscoveryShell: {
+    display: "grid",
+    gap: 20,
+  },
+  rentalCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 18,
+  },
+  rentalDiscoveryCard: {
+    display: "grid",
+    gap: 0,
+    borderRadius: 28,
+    border: `1px solid ${themeStyles.line}`,
+    background: "#fff",
+    overflow: "hidden",
+    boxShadow: "var(--shadow-card)",
+  },
+  rentalDiscoveryImageWrap: {
+    position: "relative",
+    padding: 18,
+    background: "#fff",
+  },
+  rentalDiscoveryImage: {
+    height: 290,
+    borderRadius: 22,
+    background: "linear-gradient(180deg, #fff 0%, #f5f8ff 100%)",
+    overflow: "hidden",
+  },
+  rentalWishlistButton: {
+    position: "absolute",
+    top: 30,
+    right: 30,
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    border: "1px solid #eef2ff",
+    background: "#fff",
+    color: "#c0c8dc",
+    display: "grid",
+    placeItems: "center",
+    fontSize: "1.35rem",
+    cursor: "pointer",
+  },
+  rentalDiscoveryBody: {
+    display: "grid",
+    gap: 10,
+    padding: "0 22px 22px",
+  },
+  rentalDiscoveryName: {
+    margin: 0,
+    color: themeStyles.brandDeep,
+    fontSize: "2rem",
+    lineHeight: 1.08,
+    letterSpacing: "-0.06em",
+    fontWeight: 900,
+  },
+  rentalDiscoveryDesc: {
+    margin: 0,
+    color: themeStyles.inkSoft,
+    fontSize: "1rem",
+    lineHeight: 1.55,
+    minHeight: 88,
+  },
+  rentalDiscoveryProvider: {
+    color: "#8391b3",
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  rentalDiscoveryPrice: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 8,
+    color: themeStyles.brandDeep,
+    fontSize: "1.2rem",
+    fontWeight: 900,
+  },
+  rentalRentButton: {
+    minHeight: 60,
+    borderRadius: 18,
+    background: "linear-gradient(135deg, #4361ee 0%, #4d65f3 100%)",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "1.05rem",
   },
   ambulanceTopBar: {
     borderRadius: 28,
