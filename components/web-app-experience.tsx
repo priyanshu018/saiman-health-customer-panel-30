@@ -1880,10 +1880,10 @@ function ProductCard({ product }: { product: DemoPharmacyProduct }) {
       </div>
       <div style={styles.stockText}>Ready to add to cart</div>
       {line ? (
-        <div style={styles.quantityBox}>
-          <button style={styles.quantityButton} onClick={() => decrementProduct(product.id)} aria-label={`Remove one ${product.name}`}>−</button>
-          <span>{line.quantity}</span>
-          <button style={styles.quantityButton} onClick={handleAdd} aria-label={`Add one more ${product.name}`}>+</button>
+        <div style={styles.pharmacyCardQuantityBox}>
+          <button style={styles.pharmacyCardQuantityButton} onClick={() => decrementProduct(product.id)} aria-label={`Remove one ${product.name}`}>−</button>
+          <span style={styles.pharmacyCardQuantityValue}>{line.quantity}</span>
+          <button style={styles.pharmacyCardQuantityButton} onClick={handleAdd} aria-label={`Add one more ${product.name}`}>+</button>
         </div>
       ) : (
         <button className="primary-action-btn" style={styles.primaryAction} onClick={handleAdd}>Add to Cart</button>
@@ -1939,7 +1939,6 @@ export function WebPharmacyScreen() {
     <DashboardFrame
       title="Pharmacy"
       subtitle="Browse medicine categories, compare prices, and check out securely for doorstep delivery."
-      accent={cart.itemCount ? <Link href="/pharmacy/cart" style={styles.headerPill}>Proceed to Checkout · {cart.itemCount}</Link> : undefined}
     >
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Doorstep Delivery</span>
@@ -1979,6 +1978,22 @@ export function WebPharmacyScreen() {
         </section>
         );
       })}
+
+      {cart.itemCount ? <div style={{ height: 140 }} aria-hidden="true" /> : null}
+
+      {cart.itemCount ? (
+        <Link href="/pharmacy/cart" className="hover-lift" style={styles.pharmacyCheckoutBar}>
+          <div style={styles.pharmacyCheckoutIconWrap}>
+            <span style={styles.pharmacyCheckoutIcon} aria-hidden="true">🛒</span>
+            <span style={styles.pharmacyCheckoutBadge}>{cart.itemCount}</span>
+          </div>
+          <div style={styles.pharmacyCheckoutCopy}>
+            <strong style={styles.pharmacyCheckoutTitle}>Proceed to Checkout</strong>
+            <span style={styles.pharmacyCheckoutMeta}>View cart details · {formatMoney(cart.total)}</span>
+          </div>
+          <span style={styles.pharmacyCheckoutArrow} aria-hidden="true">→</span>
+        </Link>
+      ) : null}
     </DashboardFrame>
   );
 }
@@ -4262,6 +4277,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.84rem",
   },
   statRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 14,
   },
   statCard: {
@@ -5460,6 +5477,110 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     minWidth: 44,
     minHeight: 44,
+  },
+  pharmacyCardQuantityBox: {
+    display: "grid",
+    gridTemplateColumns: "56px minmax(0, 1fr) 56px",
+    alignItems: "center",
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "rgba(47, 89, 255, 0.22)",
+    background: "rgba(255,255,255,0.96)",
+    color: "var(--brand-deep)",
+    fontWeight: 800,
+    boxShadow: "0 10px 24px rgba(47, 89, 255, 0.08)",
+  },
+  pharmacyCardQuantityButton: {
+    border: "none",
+    background: "transparent",
+    color: "var(--brand)",
+    fontSize: "2rem",
+    lineHeight: 1,
+    cursor: "pointer",
+    minWidth: 56,
+    minHeight: 52,
+  },
+  pharmacyCardQuantityValue: {
+    textAlign: "center",
+    color: "var(--brand-deep)",
+    fontSize: "1.75rem",
+    lineHeight: 1,
+    fontWeight: 800,
+    letterSpacing: "-0.04em",
+  },
+  pharmacyCheckoutBar: {
+    position: "fixed",
+    left: "50%",
+    bottom: 28,
+    transform: "translateX(-50%)",
+    width: "min(880px, calc(100vw - 40px))",
+    display: "grid",
+    gridTemplateColumns: "88px minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: 18,
+    padding: "16px 22px",
+    borderRadius: 30,
+    background: "linear-gradient(135deg, #3558ff 0%, #2f59ff 42%, #4b66ef 100%)",
+    color: "var(--surface-strong)",
+    boxShadow: "0 18px 48px rgba(47, 89, 255, 0.28)",
+    zIndex: 50,
+  },
+  pharmacyCheckoutIconWrap: {
+    position: "relative",
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    background: "rgba(255,255,255,0.14)",
+    display: "grid",
+    placeItems: "center",
+  },
+  pharmacyCheckoutIcon: {
+    fontSize: "2rem",
+    lineHeight: 1,
+  },
+  pharmacyCheckoutBadge: {
+    position: "absolute",
+    top: -6,
+    right: -2,
+    minWidth: 30,
+    height: 30,
+    padding: "0 8px",
+    borderRadius: 999,
+    background: "#22c55e",
+    color: "#ffffff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "0.95rem",
+    border: "3px solid rgba(255,255,255,0.85)",
+  },
+  pharmacyCheckoutCopy: {
+    display: "grid",
+    gap: 4,
+    minWidth: 0,
+  },
+  pharmacyCheckoutTitle: {
+    fontSize: "1.85rem",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    fontWeight: 800,
+  },
+  pharmacyCheckoutMeta: {
+    fontSize: "1.15rem",
+    lineHeight: 1.3,
+    color: "rgba(255,255,255,0.86)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  pharmacyCheckoutArrow: {
+    fontSize: "2.8rem",
+    lineHeight: 1,
+    fontWeight: 700,
   },
   cartLayout: {},
   cartLine: {
