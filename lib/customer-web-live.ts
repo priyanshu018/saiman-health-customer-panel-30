@@ -161,6 +161,27 @@ export type StaffingProviderSummary = {
   avatarUrl: string | null;
 };
 
+export type HealthCardApplication = {
+  id: string;
+  full_name: string;
+  mobile: string;
+  dob: string | null;
+  gender: string | null;
+  address: string | null;
+  card_number: string;
+  conditions: string[];
+  symptoms: string | null;
+  problem_start_date: string | null;
+  hospital_name: string | null;
+  hospital_area: string | null;
+  hospital_city: string | null;
+  status: "Submitted" | "Under Review" | "Approved" | "Authorized" | "Rejected";
+  authorization_id: string | null;
+  valid_till: string | null;
+  coverage_type: string | null;
+  created_at: string;
+};
+
 export type AppointmentSummary = {
   id: string;
   status: string;
@@ -261,6 +282,13 @@ function toStringArray(value: unknown): string[] {
   }
 
   return [];
+}
+
+function fileExtension(name: string, mimeType?: string | null) {
+  const fromName = name.split(".").pop();
+  if (fromName && fromName.length <= 8) return fromName;
+  if (mimeType?.includes("/")) return mimeType.split("/").pop() || "bin";
+  return "bin";
 }
 
 function formatAvailability(row: Record<string, unknown>) {
@@ -1000,6 +1028,106 @@ export async function fetchApprovedStaffingProviders() {
     qualifications: text(row.qualifications),
     avatarUrl: text(row.avatar_url) || null,
   })) satisfies StaffingProviderSummary[];
+}
+
+export async function uploadHealthCardFile(userId: string, file: File, folder: "card" | "prescription") {
+  const supabase = client();
+  const extension = fileExtension(file.name, file.type || null);
+  const path = `${userId}/${folder}-${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+
+  const { error } = await supabase.storage.from("health-card-documents").upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const { data } = supabase.storage.from("health-card-documents").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function submitHealthCardApplication(params: {
+  userId: string;
+  userEmail?: string | null;
+  userPhone?: string | null;
+  userName?: string | null;
+  fullName: string;
+  mobile: string;
+  dob?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  cardNumber: string;
+  cardPhoto: File;
+  prescription?: File | null;
+  conditions: string[];
+  symptoms?: string | null;
+  problemDate?: string | null;
+  hospital: {
+    id: string;
+    name: string;
+    area: string;
+    city: string;
+  };
+}) {
+  const [cardPhotoUrl, prescriptionUrl] = await Promise.all([
+    uploadHealthCardFile(params.userId, params.cardPhoto, "card"),
+    params.prescription ? uploadHealthCardFile(params.userId, params.prescription, "prescription") : Promise.resolve(null),
+  ]);
+
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("health_card_applications")
+    .insert({
+      user_id: params.userId,
+      user_name: params.userName || params.fullName,
+      user_email: params.userEmail || null,
+      user_phone: params.userPhone || params.mobile,
+      full_name: params.fullName,
+      mobile: params.mobile,
+      dob: params.dob || null,
+      gender: params.gender || null,
+      address: params.address || null,
+      card_number: params.cardNumber,
+      card_photo_url: cardPhotoUrl,
+      prescription_url: prescriptionUrl,
+      prescription_name: params.prescription?.name || null,
+      conditions: params.conditions,
+      symptoms: params.symptoms || null,
+      problem_start_date: params.problemDate || null,
+      hospital_id: params.hospital.id,
+      hospital_name: params.hospital.name,
+      hospital_area: params.hospital.area,
+      hospital_city: params.hospital.city,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as HealthCardApplication;
+}
+
+export async function fetchHealthCardApplication(id: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("health_card_applications")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as HealthCardApplication;
+}
+
+export async function fetchHealthCardApplicationsForPatient(userId: string) {
+  const supabase = client();
+  const { data, error } = await supabase
+    .from("health_card_applications")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []) as HealthCardApplication[];
 }
 
 export const STAFF_TYPES = ["Nurse", "Physiotherapist", "Caregiver", "Doctor", "Home Assistant", "Lab Technician"] as const;

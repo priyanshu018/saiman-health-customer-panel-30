@@ -23,6 +23,8 @@ import {
   createDoctorAppointment,
   createPharmacyOrder,
   createStaffingBooking,
+  fetchHealthCardApplication,
+  fetchHealthCardApplicationsForPatient,
   fetchOnlineAmbulances,
   fetchDoctorSpecializations,
   fetchActiveInstantCallRequest,
@@ -51,8 +53,10 @@ import {
   signupCustomer,
   STAFF_TYPES,
   STAFFING_DURATIONS,
+  submitHealthCardApplication,
   subscribeToInstantCallRequest,
   subscribeToPatientStaffingBookings,
+  type HealthCardApplication,
   type AppointmentSummary,
   type AmbulanceBookingSummary,
   type AmbulanceDriverSummary,
@@ -3901,60 +3905,609 @@ export function WebRentalOrdersScreen() {
   );
 }
 
-export function WebHealthCardScreen() {
-  const router = useRouter();
-  const { requireAuth } = useAuthActionGuard();
+const HEALTH_CARD_CONDITIONS = [
+  "Fever",
+  "Heart Disease",
+  "Diabetes",
+  "Accident / Injury",
+  "Pregnancy",
+  "Kidney Problem",
+  "Cancer",
+  "Surgery Required",
+  "BP / Hypertension",
+  "Other",
+] as const;
 
-  function handlePlanView() {
-    const user = requireAuth("/health-card");
+const HEALTH_CARD_GENDERS = ["Male", "Female", "Other"] as const;
+
+type HealthCardHospitalOption = {
+  id: string;
+  name: string;
+  area: string;
+  city: string;
+  address: string;
+  speciality: string;
+  listingCount: number;
+};
+
+function healthCardAreaFromAddress(address: string, city: string) {
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const cityLower = city.toLowerCase();
+  const area = parts.find((part) => part.toLowerCase() !== cityLower);
+  return area || city || "Hospital location";
+}
+
+function groupHealthCardHospitals(services: HospitalServiceSummary[]) {
+  const grouped = new Map<string, HealthCardHospitalOption>();
+
+  for (const service of services) {
+    const key = service.providerId || service.providerName || service.id;
+    const existing = grouped.get(key);
+    if (!existing) {
+      const address = service.providerAddress || service.providerCity || "Address available after approval";
+      grouped.set(key, {
+        id: service.providerId || key,
+        name: service.providerName || "Hospital",
+        area: healthCardAreaFromAddress(address, service.providerCity || ""),
+        city: service.providerCity || "",
+        address,
+        speciality: service.serviceName || service.category || "General Care",
+        listingCount: 1,
+      });
+      continue;
+    }
+
+    existing.listingCount += 1;
+    if ((!existing.speciality || existing.speciality === "General Care") && (service.serviceName || service.category)) {
+      existing.speciality = service.serviceName || service.category;
+    }
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function healthCardStatusMeta(status: HealthCardApplication["status"]) {
+  if (status === "Approved" || status === "Authorized") {
+    return { label: status, bg: "#DCFCE7", color: "#15803D" };
+  }
+  if (status === "Rejected") {
+    return { label: "Rejected", bg: "#FEE2E2", color: "#DC2626" };
+  }
+  if (status === "Under Review") {
+    return { label: "Under Review", bg: "#FEF3C7", color: "#B45309" };
+  }
+  return { label: "Submitted", bg: "#EEF2FF", color: "#4361EE" };
+}
+
+function WizardProgress({
+  steps,
+  activeStep,
+}: {
+  steps: string[];
+  activeStep: number;
+}) {
+  return (
+    <div style={styles.wizardShell}>
+      <div style={styles.wizardStepRow}>
+        {steps.map((step, index) => {
+          const current = index + 1;
+          const complete = current <= activeStep;
+          return (
+            <div key={step} style={styles.wizardStepItem}>
+              <div style={{ ...styles.wizardStepDot, ...(complete ? styles.wizardStepDotActive : {}) }}>{current}</div>
+              <div style={{ ...styles.wizardStepLabel, ...(complete ? styles.wizardStepLabelActive : {}) }}>{step}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ ...styles.wizardBarRow, gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((step, index) => (
+          <div key={step} style={{ ...styles.wizardBar, ...(index + 1 <= activeStep ? styles.wizardBarActive : {}) }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function WebHealthCardScreen() {
+  const { user } = useCustomerUser();
+  const { requireAuth } = useAuthActionGuard();
+  const [activeTab, setActiveTab] = useState<"new" | "created">("new");
+  const [step, setStep] = useState(1);
+  const [fullName, setFullName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [dob, setDob] = useState("1990-08-15");
+  const [gender, setGender] = useState<(typeof HEALTH_CARD_GENDERS)[number]>("Male");
+  const [address, setAddress] = useState("");
+  const [conditionSearch, setConditionSearch] = useState("");
+  const [conditions, setConditions] = useState<string[]>([]);
+  const [symptoms, setSymptoms] = useState("");
+  const [problemDate, setProblemDate] = useState("2024-05-10");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardPhoto, setCardPhoto] = useState<File | null>(null);
+  const [prescription, setPrescription] = useState<File | null>(null);
+  const [hospitalSearch, setHospitalSearch] = useState("");
+  const [hospitalOptions, setHospitalOptions] = useState<HealthCardHospitalOption[]>([]);
+  const [hospitalLoading, setHospitalLoading] = useState(true);
+  const [selectedHospital, setSelectedHospital] = useState<HealthCardHospitalOption | null>(null);
+  const [applications, setApplications] = useState<HealthCardApplication[]>([]);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [selectedApplication, setSelectedApplication] = useState<HealthCardApplication | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
     if (!user) return;
-    router.push("/subscription-plans");
+    fetchCustomerProfile(user.id)
+      .then((profile) => {
+        setFullName((current) => current || user.name || "");
+        setMobile((current) => current || user.phone || "");
+        setAddress((current) => current || profile.city || "");
+      })
+      .catch(() => {
+        setFullName((current) => current || user.name || "");
+        setMobile((current) => current || user.phone || "");
+      });
+  }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    fetchApprovedHospitalServices()
+      .then((services) => {
+        if (!active) return;
+        setHospitalOptions(groupHealthCardHospitals(services));
+      })
+      .catch(() => {
+        if (!active) return;
+        setHospitalOptions([]);
+      })
+      .finally(() => {
+        if (active) setHospitalLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      Promise.resolve().then(() => {
+        setApplications([]);
+        setSelectedApplication(null);
+        setApplicationsLoading(false);
+      });
+      return;
+    }
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) setApplicationsLoading(true);
+    });
+    fetchHealthCardApplicationsForPatient(user.id)
+      .then((items) => {
+        if (!active) return;
+        setApplications(items);
+        setSelectedApplication((current) => current || items[0] || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setApplications([]);
+      })
+      .finally(() => {
+        if (active) setApplicationsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const filteredConditions = useMemo(
+    () => HEALTH_CARD_CONDITIONS.filter((item) => item.toLowerCase().includes(conditionSearch.toLowerCase())),
+    [conditionSearch],
+  );
+
+  const filteredHospitals = useMemo(
+    () =>
+      hospitalOptions.filter((item) => {
+        const haystack = `${item.name} ${item.city} ${item.area} ${item.speciality}`.toLowerCase();
+        return haystack.includes(hospitalSearch.toLowerCase());
+      }),
+    [hospitalOptions, hospitalSearch],
+  );
+
+  const applicationStats = useMemo(() => {
+    const approved = applications.filter((item) => item.status === "Approved" || item.status === "Authorized").length;
+    const pending = applications.filter((item) => item.status === "Submitted" || item.status === "Under Review").length;
+    return { total: applications.length, approved, pending };
+  }, [applications]);
+
+  function toggleCondition(item: string) {
+    setConditions((current) => (current.includes(item) ? current.filter((value) => value !== item) : [...current, item]));
+  }
+
+  function resetHealthCardForm() {
+    setStep(1);
+    setConditionSearch("");
+    setConditions([]);
+    setSymptoms("");
+    setProblemDate("2024-05-10");
+    setCardNumber("");
+    setCardPhoto(null);
+    setPrescription(null);
+    setHospitalSearch("");
+    setSelectedHospital(null);
+    setError("");
+  }
+
+  async function loadHealthCardApplication(id: string) {
+    try {
+      const item = await fetchHealthCardApplication(id);
+      setSelectedApplication(item);
+    } catch {
+      setSelectedApplication(applications.find((application) => application.id === id) || null);
+    }
+  }
+
+  function goToNextHealthCardStep() {
+    setError("");
+    if (step === 1 && (!fullName.trim() || !mobile.trim() || !address.trim())) {
+      setError("Add your full name, mobile number, and address to continue.");
+      return;
+    }
+    if (step === 2 && (!conditions.length || !symptoms.trim())) {
+      setError("Choose at least one health condition and describe the symptoms.");
+      return;
+    }
+    if (step === 3 && (!cardNumber.trim() || !cardPhoto)) {
+      setError("Add your card number and upload the health card photo.");
+      return;
+    }
+    if (step < 5) setStep((current) => current + 1);
+  }
+
+  async function submitHealthCardRequest() {
+    setError("");
+    setSuccessMessage("");
+    const authUser = requireAuth("/health-card");
+    if (!authUser) return;
+    if (!selectedHospital) {
+      setError("Choose an approved hospital before submitting the request.");
+      return;
+    }
+    if (!cardPhoto) {
+      setError("Upload the health card photo before submitting.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const application = await submitHealthCardApplication({
+        userId: authUser.id,
+        userEmail: authUser.email,
+        userPhone: mobile.trim() || authUser.phone,
+        userName: fullName.trim() || authUser.name,
+        fullName: fullName.trim(),
+        mobile: mobile.trim(),
+        dob,
+        gender,
+        address: address.trim(),
+        cardNumber: cardNumber.trim(),
+        cardPhoto,
+        prescription,
+        conditions,
+        symptoms: symptoms.trim(),
+        problemDate,
+        hospital: {
+          id: selectedHospital.id,
+          name: selectedHospital.name,
+          area: selectedHospital.area,
+          city: selectedHospital.city,
+        },
+      });
+
+      const items = await fetchHealthCardApplicationsForPatient(authUser.id);
+      setApplications(items);
+      setSelectedApplication(application);
+      setActiveTab("created");
+      setSuccessMessage("Health card request submitted. You can now track it in Created.");
+      resetHealthCardForm();
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "Unable to submit your health card request.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <DashboardFrame title="Health Card" subtitle="Review health card plans, eligibility, and required documents before you apply.">
+    <DashboardFrame title="Health Card" subtitle="Create a new health-card request or track previously submitted applications just like the mobile app flow.">
       <section style={styles.heroWideCard}>
         <span style={styles.bluePill}>Health Card</span>
-        <h2 style={styles.heroHeadingAlt}>Membership plans, records, and care benefits in one customer view.</h2>
-        <p style={styles.heroCopy}>A Saiman Health Card gives your family faster access to partner hospitals and simplified billing.</p>
+        <h2 style={styles.heroHeadingAlt}>Create a hospital authorization request in five guided steps.</h2>
+        <p style={styles.heroCopy}>Enter your details, add medical context, upload the card, review everything, and submit it to an approved hospital partner.</p>
       </section>
 
-      <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
-        <section style={styles.sectionBlock}>
-          <div style={styles.sectionHead}>
-            <h2 style={styles.sectionTitle}>Available Plans</h2>
-          </div>
-          <div className="responsive-grid-3col" style={styles.planCardGrid}>
-            {subscriptionPlans.map((plan) => (
-              <div key={plan.name} style={styles.membershipCard}>
-                <span style={styles.subscriptionTag}>Health Card Plan</span>
-                <h3 style={styles.tileTitle}>{plan.name}</h3>
-                <div style={styles.membershipPrice}>{plan.price}</div>
-                <p style={styles.tileCopy}>{plan.detail}</p>
-                <button type="button" onClick={handlePlanView} className="primary-action-btn" style={styles.primaryAction}>View Plan</button>
-              </div>
-            ))}
-          </div>
-        </section>
+      <section style={styles.sectionBlock}>
+        <div style={styles.tabRow}>
+          <button type="button" style={{ ...styles.tabButton, ...(activeTab === "new" ? styles.tabButtonActive : {}) }} onClick={() => setActiveTab("new")}>
+            New
+          </button>
+          <button type="button" style={{ ...styles.tabButton, ...(activeTab === "created" ? styles.tabButtonActive : {}) }} onClick={() => setActiveTab("created")}>
+            Created
+          </button>
+        </div>
+      </section>
 
-        <section style={styles.sectionBlock}>
-          <div style={styles.sectionHead}>
-            <h2 style={styles.sectionTitle}>What You Can Manage</h2>
-          </div>
-          <div style={styles.stackList}>
-            {[
-              ["Health card details", "Keep your membership reference, identity details, and service eligibility ready."],
-              ["Documents", "Prepare prescriptions, reports, and patient documents for assisted verification."],
-              ["Benefits", "Save on consultations, diagnostics, and pharmacy orders with your membership plan."],
-            ].map(([title, copy]) => (
-              <div key={title} style={styles.stepCard}>
-                <strong>{title}</strong>
-                <p>{copy}</p>
+      {successMessage ? <div style={styles.noticeCard}>{successMessage}</div> : null}
+      {error ? <div style={styles.errorNote}>{error}</div> : null}
+
+      {activeTab === "new" ? (
+        <>
+          <section style={styles.sectionBlock}>
+            <div style={styles.healthCardHeaderRow}>
+              <div>
+                <div style={styles.sectionTitle}>Health Card Application</div>
+                <p style={styles.healthCardSubcopy}>Step {step} of 5</p>
               </div>
-            ))}
+              <div style={styles.healthCardStepBadge}>Step {step}/5</div>
+            </div>
+            <WizardProgress steps={["Your Details", "Condition", "Documents", "Verify", "Hospital"]} activeStep={step} />
+          </section>
+
+          {step === 1 ? (
+            <section style={styles.sectionBlock}>
+              <div style={styles.sectionHead}>
+                <h2 style={styles.sectionTitle}>Your Details</h2>
+              </div>
+              <p style={styles.pageSubtitle}>Please enter your basic information.</p>
+              <div style={styles.healthCardFormGrid}>
+                <div style={styles.formStack}>
+                  <label style={styles.fieldLabel}>Full Name</label>
+                  <input style={styles.fieldInput} value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Enter your full name" />
+                </div>
+                <div style={styles.formStack}>
+                  <label style={styles.fieldLabel}>Mobile Number</label>
+                  <input style={styles.fieldInput} value={mobile} onChange={(event) => setMobile(event.target.value)} placeholder="+91 XXXXX XXXXX" />
+                </div>
+                <div style={styles.formStack}>
+                  <label style={styles.fieldLabel}>Date of Birth</label>
+                  <input type="date" style={styles.fieldInput} value={dob} max={todayIsoDate()} onChange={(event) => setDob(event.target.value)} />
+                </div>
+                <div style={styles.formStack}>
+                  <label style={styles.fieldLabel}>Gender</label>
+                  <div style={styles.chipRow}>
+                    {HEALTH_CARD_GENDERS.map((item) => (
+                      <button key={item} type="button" onClick={() => setGender(item)} style={{ ...styles.filterChip, ...(gender === item ? styles.filterChipActive : {}) }}>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={styles.formStack}>
+                <label style={styles.fieldLabel}>Address</label>
+                <textarea style={styles.textArea} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Enter your full address" />
+              </div>
+            </section>
+          ) : null}
+
+          {step === 2 ? (
+            <section style={styles.sectionBlock}>
+              <div style={styles.sectionHead}>
+                <h2 style={styles.sectionTitle}>Health Condition</h2>
+              </div>
+              <p style={styles.pageSubtitle}>Choose the main condition and tell us about the symptoms.</p>
+              <input style={styles.searchInput} value={conditionSearch} onChange={(event) => setConditionSearch(event.target.value)} placeholder="Search or select condition" />
+              <div style={{ ...styles.chipRow, marginTop: 14 }}>
+                {filteredConditions.map((item) => (
+                  <button key={item} type="button" onClick={() => toggleCondition(item)} style={{ ...styles.filterChip, ...(conditions.includes(item) ? styles.filterChipActive : {}) }}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              {conditions.length ? <div style={styles.noticeCard}>{conditions.length} condition{conditions.length > 1 ? "s" : ""} selected.</div> : null}
+              <div style={styles.formStack}>
+                <label style={styles.fieldLabel}>Describe your problem / symptoms</label>
+                <textarea style={styles.textArea} value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Describe your symptoms in detail..." />
+              </div>
+              <div style={styles.formStack}>
+                <label style={styles.fieldLabel}>When did the problem start?</label>
+                <input type="date" style={styles.fieldInput} value={problemDate} max={todayIsoDate()} onChange={(event) => setProblemDate(event.target.value)} />
+              </div>
+            </section>
+          ) : null}
+
+          {step === 3 ? (
+            <section style={styles.sectionBlock}>
+              <div style={styles.sectionHead}>
+                <h2 style={styles.sectionTitle}>Health Card &amp; Documents</h2>
+              </div>
+              <div style={styles.healthCardFormGrid}>
+                <div style={styles.formStack}>
+                  <label style={styles.fieldLabel}>Health Card Number</label>
+                  <input style={styles.fieldInput} value={cardNumber} onChange={(event) => setCardNumber(event.target.value.toUpperCase())} placeholder="HC XXXX XXXX XXXX" />
+                </div>
+              </div>
+              <div style={styles.healthCardUploadGrid}>
+                <label style={styles.healthCardUploadCard}>
+                  <strong style={styles.tileTitle}>Upload Health Card Photo</strong>
+                  <span style={styles.tileCopy}>{cardPhoto ? cardPhoto.name : "JPG, PNG, or PDF supported"}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    style={styles.healthCardHiddenInput}
+                    onChange={(event) => setCardPhoto(event.target.files?.[0] || null)}
+                  />
+                  <span style={styles.healthCardUploadButton}>{cardPhoto ? "Change file" : "Choose file"}</span>
+                </label>
+                <label style={styles.healthCardUploadCard}>
+                  <strong style={styles.tileTitle}>Upload Prescription / Report</strong>
+                  <span style={styles.tileCopy}>{prescription ? prescription.name : "Optional support document"}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    style={styles.healthCardHiddenInput}
+                    onChange={(event) => setPrescription(event.target.files?.[0] || null)}
+                  />
+                  <span style={styles.healthCardUploadButton}>{prescription ? "Replace file" : "Upload optional file"}</span>
+                </label>
+              </div>
+            </section>
+          ) : null}
+
+          {step === 4 ? (
+            <section style={styles.sectionBlock}>
+              <div style={styles.sectionHead}>
+                <h2 style={styles.sectionTitle}>Verification Summary</h2>
+              </div>
+              <div style={styles.stackList}>
+                <div style={styles.stepCard}>
+                  <strong>{fullName || "Patient details pending"}</strong>
+                  <p>{mobile || "Mobile number missing"} · {gender} · {dob ? formatDate(dob) : "DOB pending"}</p>
+                </div>
+                <div style={styles.stepCard}>
+                  <strong>{conditions.join(", ") || "Condition pending"}</strong>
+                  <p>{symptoms || "Symptoms not added yet."}</p>
+                </div>
+                <div style={styles.stepCard}>
+                  <strong>{cardNumber || "Card number pending"}</strong>
+                  <p>{cardPhoto ? `Card file: ${cardPhoto.name}` : "Card photo not uploaded"}{prescription ? ` · Prescription: ${prescription.name}` : ""}</p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {step === 5 ? (
+            <section style={styles.sectionBlock}>
+              <div style={styles.sectionHead}>
+                <h2 style={styles.sectionTitle}>Choose Approved Hospital</h2>
+              </div>
+              <input style={styles.searchInput} value={hospitalSearch} onChange={(event) => setHospitalSearch(event.target.value)} placeholder="Search approved hospitals, speciality, city..." />
+              {hospitalLoading ? <div style={styles.noticeCard}>Loading approved hospitals...</div> : null}
+              {!hospitalLoading && !filteredHospitals.length ? <div style={styles.noticeCard}>No approved hospital matched this search.</div> : null}
+              <div style={styles.appointmentGrid}>
+                {filteredHospitals.map((hospital) => {
+                  const active = selectedHospital?.id === hospital.id;
+                  return (
+                    <button key={hospital.id} type="button" onClick={() => setSelectedHospital(hospital)} style={{ ...styles.healthCardHospitalCard, ...(active ? styles.healthCardHospitalCardActive : {}) }}>
+                      <span style={styles.blogTag}>{hospital.speciality}</span>
+                      <strong style={styles.tileTitle}>{hospital.name}</strong>
+                      <span style={styles.tileCopy}>{hospital.area}{hospital.city ? ` · ${hospital.city}` : ""}</span>
+                      <div style={styles.tileMetaGrid}>
+                        <span>{hospital.listingCount} approved service{hospital.listingCount > 1 ? "s" : ""}</span>
+                        <span>{hospital.address}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          <section style={styles.checkoutBar}>
+            <div>
+              <strong style={styles.checkoutTitle}>{step === 5 ? (selectedHospital?.name || "Choose a hospital to submit") : `Step ${step} of 5`}</strong>
+              <span style={styles.checkoutMeta}>{step === 5 ? "The request will be sent to the selected approved hospital." : "We are keeping this aligned with the mobile application flow."}</span>
+            </div>
+            <div style={styles.healthCardActionRow}>
+              {step > 1 ? (
+                <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} style={styles.secondaryAction}>
+                  Back
+                </button>
+              ) : null}
+              {step < 5 ? (
+                <button type="button" onClick={goToNextHealthCardStep} className="primary-action-btn" style={styles.primaryAction}>
+                  Continue
+                </button>
+              ) : (
+                <button type="button" onClick={() => void submitHealthCardRequest()} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
+                  {submitting ? "Submitting..." : "Submit Request"}
+                </button>
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="responsive-grid-3col" style={styles.planCardGrid}>
+            <div style={styles.membershipCard}>
+              <span style={styles.subscriptionTag}>Total</span>
+              <div style={styles.membershipPrice}>{applicationStats.total}</div>
+            </div>
+            <div style={styles.membershipCard}>
+              <span style={styles.subscriptionTag}>Pending</span>
+              <div style={styles.membershipPrice}>{applicationStats.pending}</div>
+            </div>
+            <div style={styles.membershipCard}>
+              <span style={styles.subscriptionTag}>Approved</span>
+              <div style={styles.membershipPrice}>{applicationStats.approved}</div>
+            </div>
           </div>
-        </section>
-      </div>
+
+          {applicationsLoading ? <div style={styles.noticeCard}>Loading your health cards...</div> : null}
+          {!applicationsLoading && !applications.length ? (
+            <section style={styles.emptyPanel}>
+              <h2 style={styles.emptyTitle}>No health cards created yet</h2>
+              <p style={styles.emptyCopy}>Start a new application to request hospital authorization.</p>
+              <button type="button" onClick={() => setActiveTab("new")} style={{ ...styles.emptyPanelAction, border: "none" }}>Create New Health Card</button>
+            </section>
+          ) : null}
+
+          {!!applications.length ? (
+            <div className="responsive-grid-standard" style={styles.twoColumnGrid}>
+              <section style={styles.sectionBlock}>
+                <div style={styles.stackList}>
+                  {applications.map((item) => {
+                    const status = healthCardStatusMeta(item.status);
+                    return (
+                      <button key={item.id} type="button" onClick={() => void loadHealthCardApplication(item.id)} style={styles.healthCardCreatedCard}>
+                        <div style={styles.healthCardCreatedTop}>
+                          <div>
+                            <strong style={styles.tileTitle}>{item.full_name}</strong>
+                            <p style={styles.tileCopy}>{item.hospital_name || "Hospital pending"}{item.hospital_city ? ` · ${item.hospital_city}` : ""}</p>
+                          </div>
+                          <span style={{ ...styles.healthCardStatusBadge, background: status.bg, color: status.color }}>{status.label}</span>
+                        </div>
+                        <div style={styles.tileMetaGrid}>
+                          <span>Card Number: {item.card_number || "Pending"}</span>
+                          <span>Created: {formatDate(item.created_at)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section style={styles.sectionBlock}>
+                {selectedApplication ? (
+                  <div style={styles.stackList}>
+                    <div style={styles.stepCard}>
+                      <strong>Status</strong>
+                      <p>{selectedApplication.status}</p>
+                    </div>
+                    <div style={styles.stepCard}>
+                      <strong>Authorization ID</strong>
+                      <p>{selectedApplication.authorization_id || "Pending"}</p>
+                    </div>
+                    <div style={styles.stepCard}>
+                      <strong>Coverage</strong>
+                      <p>{selectedApplication.coverage_type || "Pending"}{selectedApplication.valid_till ? ` · Valid till ${selectedApplication.valid_till}` : ""}</p>
+                    </div>
+                    <div style={styles.stepCard}>
+                      <strong>Condition</strong>
+                      <p>{selectedApplication.conditions.join(", ") || selectedApplication.symptoms || "Not provided"}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={styles.noticeCard}>Choose a health card to view its latest status.</div>
+                )}
+              </section>
+            </div>
+          ) : null}
+        </>
+      )}
     </DashboardFrame>
   );
 }
@@ -4053,6 +4606,7 @@ const STAFF_TYPE_ICON: Record<string, string> = {
 export function WebStaffingRequestScreen() {
   const router = useRouter();
   const { requireAuth } = useAuthActionGuard();
+  const [step, setStep] = useState(1);
   const [selectedStaff, setSelectedStaff] = useState<Record<string, number>>({});
   const [patientCondition, setPatientCondition] = useState("");
   const [fullAddress, setFullAddress] = useState("");
@@ -4113,127 +4667,203 @@ export function WebStaffingRequestScreen() {
     }
   }
 
+  function goToNextStaffStep() {
+    setError("");
+    if (step === 1 && !selections.length) {
+      setError("Choose at least one type of care staff.");
+      return;
+    }
+    if (step === 2 && (!fullAddress.trim() || !city.trim())) {
+      setError("Add the service address and city.");
+      return;
+    }
+    if (step < 3) setStep((current) => current + 1);
+  }
+
   return (
-    <DashboardFrame title="Request Care Staff" subtitle="Share your patient's care needs, schedule, and address. Our dispatch team confirms pricing and assigns a verified professional.">
+    <DashboardFrame title="Request Care Staff" subtitle="Share your patient's care needs, schedule, and address in the same 3-step flow used in mobile.">
       {error ? <div style={styles.errorNote}>{error}</div> : null}
 
       <section style={styles.sectionBlock}>
-        <div style={styles.sectionHead}>
-          <h2 style={styles.sectionTitle}>What type of care staff do you need?</h2>
-        </div>
-        <div style={styles.serviceTileGrid}>
-          {STAFF_TYPES.map((type) => {
-            const count = selectedStaff[type] || 0;
-            const active = count > 0;
-            return (
-              <div
-                key={type}
-                role="button"
-                tabIndex={0}
-                onClick={() => updateCount(type, active ? -count : 1)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    updateCount(type, active ? -count : 1);
-                  }
-                }}
-                style={{ ...styles.filterChip, ...(active ? styles.filterChipActive : {}), display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 12px", cursor: "pointer" }}
-              >
-                <span style={{ fontSize: 28 }}>{STAFF_TYPE_ICON[type] || "🩺"}</span>
-                <span>{type}</span>
-                {active ? (
-                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button
-                      type="button"
-                      aria-label={`Remove one ${type}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateCount(type, -1);
-                      }}
-                      style={styles.quantityButton}
-                    >
-                      −
-                    </button>
-                    <strong>{count}</strong>
-                    <button
-                      type="button"
-                      aria-label={`Add one more ${type}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateCount(type, 1);
-                      }}
-                      style={styles.quantityButton}
-                    >
-                      +
-                    </button>
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-        {numberOfStaff ? <p style={styles.tileCopy}>Selected: {staffSummary} ({numberOfStaff} total)</p> : null}
-      </section>
-
-      <section style={styles.sectionBlock}>
-        <div style={styles.sectionHead}>
-          <h2 style={styles.sectionTitle}>Schedule &amp; Address</h2>
-        </div>
-        <div style={styles.formStack}>
-          <label style={styles.fieldLabel}>Service address</label>
-          <textarea style={styles.textArea} value={fullAddress} onChange={(event) => setFullAddress(event.target.value)} placeholder="House / street, landmark" required />
-          <label style={styles.fieldLabel}>City</label>
-          <input style={styles.fieldInput} value={city} onChange={(event) => setCity(event.target.value)} placeholder="Enter city" required />
-          <label style={styles.fieldLabel}>Date</label>
-          <input type="date" style={styles.fieldInput} value={scheduledDate} min={todayIsoDate()} onChange={(event) => setScheduledDate(event.target.value)} />
-          <label style={styles.fieldLabel}>Time</label>
-          <input type="time" style={styles.fieldInput} value={scheduledTime} onChange={(event) => setScheduledTime(event.target.value)} />
-          <label style={styles.fieldLabel}>Shift duration</label>
-          <div style={styles.chipRow}>
-            {STAFFING_DURATIONS.map((hours) => (
-              <button
-                key={hours}
-                type="button"
-                onClick={() => setDurationHours(hours)}
-                style={{ ...styles.filterChip, ...(durationHours === hours ? styles.filterChipActive : {}) }}
-              >
-                {hours} Hours
-              </button>
-            ))}
+        <div style={styles.healthCardHeaderRow}>
+          <div>
+            <h2 style={styles.sectionTitle}>Need Care Staff</h2>
+            <p style={styles.healthCardSubcopy}>Step {step} of 3</p>
           </div>
+          <div style={styles.healthCardStepBadge}>Step {step}/3</div>
         </div>
+        <WizardProgress steps={["Category", "Schedule", "Submit"]} activeStep={step} />
       </section>
 
-      <section style={styles.sectionBlock}>
-        <div style={styles.sectionHead}>
-          <h2 style={styles.sectionTitle}>Patient Details</h2>
-        </div>
-        <div style={styles.formStack}>
-          <label style={styles.fieldLabel}>Patient condition / care requirement</label>
-          <textarea
-            style={styles.textArea}
-            value={patientCondition}
-            onChange={(event) => setPatientCondition(event.target.value)}
-            placeholder="Mobility support, post-surgery recovery, elder care, or any medical assistance needed"
-          />
-          <label style={styles.fieldLabel}>Special instructions (optional)</label>
-          <textarea
-            style={styles.textArea}
-            value={specialInstructions}
-            onChange={(event) => setSpecialInstructions(event.target.value)}
-            placeholder="Timing preference, floor access, language preference, or any other note"
-          />
-        </div>
-      </section>
+      {step === 1 ? (
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>What type of Staff do you need?</h2>
+          </div>
+          <div style={styles.serviceTileGrid}>
+            {STAFF_TYPES.map((type) => {
+              const count = selectedStaff[type] || 0;
+              const active = count > 0;
+              return (
+                <div
+                  key={type}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => updateCount(type, active ? -count : 1)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      updateCount(type, active ? -count : 1);
+                    }
+                  }}
+                  style={{ ...styles.staffOptionCard, ...(active ? styles.staffOptionCardActive : {}) }}
+                >
+                  <div style={{ ...styles.staffOptionIconWrap, ...(active ? styles.staffOptionIconWrapActive : {}) }}>
+                    <span style={styles.staffOptionIcon}>{STAFF_TYPE_ICON[type] || "🩺"}</span>
+                  </div>
+                  <strong style={{ ...styles.staffOptionTitle, ...(active ? styles.staffOptionTitleActive : {}) }}>{type}</strong>
+                  {active ? (
+                    <div style={styles.staffOptionCounter}>
+                      <button
+                        type="button"
+                        aria-label={`Remove one ${type}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateCount(type, -1);
+                        }}
+                        style={styles.staffCounterButton}
+                      >
+                        −
+                      </button>
+                      <strong>{count}</strong>
+                      <button
+                        type="button"
+                        aria-label={`Add one more ${type}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateCount(type, 1);
+                        }}
+                        style={styles.staffCounterButton}
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={styles.tileCopy}>Tap to add</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={styles.healthCardSummaryBand}>
+            <strong style={styles.tileTitle}>{staffSummary || "Select staff categories"}</strong>
+            <p style={styles.tileCopy}>Next we will ask for address, timing, and patient-care details before sending the request to super admin.</p>
+          </div>
+          <div style={styles.formStack}>
+            <label style={styles.fieldLabel}>Patient condition / requirements</label>
+            <textarea
+              style={styles.textArea}
+              value={patientCondition}
+              onChange={(event) => setPatientCondition(event.target.value)}
+              placeholder="Describe the care requirement, mobility support, elder care, post-surgery help, or any medical assistance needed."
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {step === 2 ? (
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Schedule &amp; Address</h2>
+          </div>
+          <div style={styles.healthCardSummaryBand}>
+            <strong style={styles.tileTitle}>{staffSummary || "Healthcare Staff"}</strong>
+            <p style={styles.tileCopy}>Choose when and where the staff support is needed.</p>
+          </div>
+          <div style={styles.formStack}>
+            <label style={styles.fieldLabel}>Service address</label>
+            <textarea style={styles.textArea} value={fullAddress} onChange={(event) => setFullAddress(event.target.value)} placeholder="Enter full home, clinic, or patient-care address" required />
+            <label style={styles.fieldLabel}>City</label>
+            <input style={styles.fieldInput} value={city} onChange={(event) => setCity(event.target.value)} placeholder="Enter city" required />
+            <label style={styles.fieldLabel}>Date</label>
+            <input type="date" style={styles.fieldInput} value={scheduledDate} min={todayIsoDate()} onChange={(event) => setScheduledDate(event.target.value)} />
+            <label style={styles.fieldLabel}>Time</label>
+            <input type="time" style={styles.fieldInput} value={scheduledTime} onChange={(event) => setScheduledTime(event.target.value)} />
+            <label style={styles.fieldLabel}>Shift duration</label>
+            <div style={styles.chipRow}>
+              {STAFFING_DURATIONS.map((hours) => (
+                <button
+                  key={hours}
+                  type="button"
+                  onClick={() => setDurationHours(hours)}
+                  style={{ ...styles.filterChip, ...(durationHours === hours ? styles.filterChipActive : {}) }}
+                >
+                  {hours} Hours
+                </button>
+              ))}
+            </div>
+            <label style={styles.fieldLabel}>Special instructions (optional)</label>
+            <textarea
+              style={styles.textArea}
+              value={specialInstructions}
+              onChange={(event) => setSpecialInstructions(event.target.value)}
+              placeholder="Timing preference, floor access, language preference, or any other special note."
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {step === 3 ? (
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Review Requirement Summary</h2>
+          </div>
+          <div style={styles.stackList}>
+            <div style={styles.stepCard}>
+              <strong>Staff Type</strong>
+              <p>{staffSummary || "Healthcare Staff"}</p>
+            </div>
+            <div style={styles.stepCard}>
+              <strong>Number of Staff</strong>
+              <p>{numberOfStaff} staff member{numberOfStaff > 1 ? "s" : ""}</p>
+            </div>
+            <div style={styles.stepCard}>
+              <strong>Date &amp; Time</strong>
+              <p>{scheduledDate} · {scheduledTime} · {durationHours} Hours</p>
+            </div>
+            <div style={styles.stepCard}>
+              <strong>Location</strong>
+              <p>{fullAddress || "Not provided"}{city ? ` · ${city}` : ""}</p>
+            </div>
+            <div style={styles.stepCard}>
+              <strong>Patient Condition</strong>
+              <p>{patientCondition || "General care requirement"}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section style={styles.checkoutBar}>
         <div>
           <strong style={styles.checkoutTitle}>{staffSummary || "Select care staff to continue"}</strong>
-          <span style={styles.checkoutMeta}>Pricing is confirmed by our dispatch team after review</span>
+          <span style={styles.checkoutMeta}>{step < 3 ? `Step ${step} of 3` : "Pricing is confirmed by our dispatch team after review"}</span>
         </div>
-        <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
-          {submitting ? "Submitting..." : "Submit Request"}
-        </button>
+        <div style={styles.healthCardActionRow}>
+          {step > 1 ? (
+            <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} style={styles.secondaryAction}>
+              Back
+            </button>
+          ) : null}
+          {step < 3 ? (
+            <button onClick={goToNextStaffStep} className="primary-action-btn" style={styles.primaryAction}>
+              Next
+            </button>
+          ) : (
+            <button onClick={handleSubmit} className="primary-action-btn" style={styles.primaryAction} disabled={submitting}>
+              {submitting ? "Submitting..." : "Submit Booking Request"}
+            </button>
+          )}
+        </div>
       </section>
     </DashboardFrame>
   );
@@ -7875,6 +8505,236 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--surface-strong)",
     color: "var(--brand-deep)",
     boxShadow: "var(--shadow-card)",
+  },
+  wizardShell: {
+    display: "grid",
+    gap: 14,
+    marginTop: 10,
+  },
+  wizardStepRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+    gap: 12,
+  },
+  wizardStepItem: {
+    display: "grid",
+    justifyItems: "center",
+    gap: 8,
+    textAlign: "center",
+  },
+  wizardStepDot: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    background: "var(--surface-muted)",
+    color: "var(--ink-soft)",
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 900,
+  },
+  wizardStepDotActive: {
+    background: "var(--brand)",
+    color: "#fff",
+  },
+  wizardStepLabel: {
+    color: "var(--ink-soft)",
+    fontWeight: 800,
+    fontSize: "0.92rem",
+  },
+  wizardStepLabelActive: {
+    color: "var(--brand-deep)",
+  },
+  wizardBarRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    gap: 10,
+  },
+  wizardBar: {
+    height: 6,
+    borderRadius: 999,
+    background: "var(--line)",
+  },
+  wizardBarActive: {
+    background: "var(--brand)",
+  },
+  healthCardHeaderRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+    flexWrap: "wrap",
+  },
+  healthCardSubcopy: {
+    margin: "8px 0 0",
+    color: "var(--ink-soft)",
+    fontWeight: 700,
+  },
+  healthCardStepBadge: {
+    minHeight: 42,
+    padding: "0 16px",
+    borderRadius: 999,
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "0.95rem",
+  },
+  healthCardFormGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 16,
+    marginBottom: 16,
+  },
+  healthCardUploadGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 16,
+  },
+  healthCardUploadCard: {
+    display: "grid",
+    gap: 12,
+    padding: 18,
+    borderRadius: "var(--radius-lg)",
+    border: "1.5px dashed var(--line-strong)",
+    background: "var(--surface)",
+    cursor: "pointer",
+  },
+  healthCardHiddenInput: {
+    display: "none",
+  },
+  healthCardUploadButton: {
+    display: "inline-flex",
+    width: "fit-content",
+    minHeight: 42,
+    padding: "0 16px",
+    borderRadius: 999,
+    background: "var(--brand-tint)",
+    color: "var(--brand)",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+  },
+  healthCardActionRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  healthCardSummaryBand: {
+    borderRadius: "var(--radius-lg)",
+    padding: 18,
+    marginTop: 18,
+    marginBottom: 18,
+    background: "linear-gradient(135deg, #102a56 0%, #1c3f7d 100%)",
+    color: "#fff",
+  },
+  healthCardHospitalCard: {
+    textAlign: "left",
+    borderRadius: "var(--radius-lg)",
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
+    background: "var(--surface-strong)",
+    padding: 18,
+    display: "grid",
+    gap: 10,
+    cursor: "pointer",
+    boxShadow: "var(--shadow-card)",
+  },
+  healthCardHospitalCardActive: {
+    borderColor: "var(--brand)",
+    background: "var(--brand-tint)",
+    boxShadow: "var(--shadow-brand)",
+  },
+  healthCardCreatedCard: {
+    width: "100%",
+    textAlign: "left",
+    borderRadius: "var(--radius-lg)",
+    border: "1px solid var(--line)",
+    background: "var(--surface-strong)",
+    padding: 18,
+    display: "grid",
+    gap: 12,
+    cursor: "pointer",
+    boxShadow: "var(--shadow-card)",
+  },
+  healthCardCreatedTop: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  healthCardStatusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontWeight: 900,
+    fontSize: "0.8rem",
+    whiteSpace: "nowrap",
+  },
+  staffOptionCard: {
+    display: "grid",
+    justifyItems: "center",
+    alignContent: "center",
+    gap: 12,
+    minHeight: 220,
+    padding: "18px 16px",
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderStyle: "solid",
+    borderColor: "var(--line)",
+    background: "var(--surface-strong)",
+    cursor: "pointer",
+    textAlign: "center",
+    boxShadow: "var(--shadow-card)",
+  },
+  staffOptionCardActive: {
+    borderColor: "var(--brand)",
+    background: "var(--brand-tint)",
+  },
+  staffOptionIconWrap: {
+    width: 92,
+    height: 92,
+    borderRadius: "50%",
+    background: "#eef3ff",
+    display: "grid",
+    placeItems: "center",
+  },
+  staffOptionIconWrapActive: {
+    background: "#e2eaff",
+  },
+  staffOptionIcon: {
+    fontSize: "3rem",
+    lineHeight: 1,
+  },
+  staffOptionTitle: {
+    color: "var(--brand-deep)",
+    fontSize: "1.15rem",
+    lineHeight: 1.2,
+    fontWeight: 900,
+  },
+  staffOptionTitleActive: {
+    color: "var(--brand)",
+  },
+  staffOptionCounter: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  staffCounterButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    border: "none",
+    background: "#eef3ff",
+    color: "var(--brand)",
+    fontSize: "1.8rem",
+    lineHeight: 1,
+    cursor: "pointer",
   },
   emptyPanel: {
     borderRadius: "var(--radius-lg)",
