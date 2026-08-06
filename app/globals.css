@@ -1478,7 +1478,7 @@ a {
 
 .mobile-home-services-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -1984,6 +1984,10 @@ a {
     margin-left: 18px;
     margin-right: 18px;
   }
+
+  .mobile-home-services-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1992,7 +1996,7 @@ a {
   .landing-service-grid,
   .landing-blog-grid,
   .site-footer-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mobile-home-banner,
@@ -2029,7 +2033,7 @@ a {
 
 @media (max-width: 560px) {
   .mobile-home-services-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 14px;
   }
 
