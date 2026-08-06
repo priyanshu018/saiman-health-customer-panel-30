@@ -1369,7 +1369,7 @@ export function WebDoctorsScreen() {
                 <strong>{doctor.fee > 0 ? formatMoney(doctor.fee) : "Fee on request"}</strong>
                 <span style={styles.availableLabel}>{doctor.availability[0] || "Verified profile"}</span>
               </div>
-              <div style={styles.doctorCardAction}>Book Appointment</div>
+              <div style={styles.doctorCardAction}>Pay Now for Booking</div>
             </div>
           </Link>
         ))}

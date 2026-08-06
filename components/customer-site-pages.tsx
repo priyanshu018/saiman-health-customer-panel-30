@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { CustomerSiteShell } from "@/components/customer-site-shell";
 import { useCustomerUser } from "@/components/customer-live";
@@ -111,33 +112,29 @@ function LegalContent({
 }
 
 export function CustomerLandingPage() {
+  const router = useRouter();
   const [landing, setLanding] = useState<LandingContent>(defaultLandingContent);
-  const [aboutPage, setAboutPage] = useState<CmsPageSummary | null>(null);
   const [blogs, setBlogs] = useState<CmsBlogSummary[]>([]);
   const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
   const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
   const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
+  const [homeSearchQuery, setHomeSearchQuery] = useState("");
 
   useEffect(() => {
     let active = true;
 
     Promise.allSettled([
       fetchPublishedCmsPageBySlug("home-landing"),
-      fetchPublishedCmsPageBySlug("about-us"),
       fetchPublishedCmsBlogs(3),
       fetchHomeBanners("Home Banner"),
       fetchServiceCardSettings(),
     ]).then((results) => {
       if (!active) return;
 
-      const [landingResult, aboutResult, blogResult, bannerResult, settingsResult] = results;
+      const [landingResult, blogResult, bannerResult, settingsResult] = results;
 
       if (landingResult.status === "fulfilled" && landingResult.value?.content) {
         setLanding(parseLandingContent(landingResult.value.content));
-      }
-
-      if (aboutResult.status === "fulfilled") {
-        setAboutPage(aboutResult.value);
       }
 
       if (blogResult.status === "fulfilled") {
@@ -168,7 +165,6 @@ export function CustomerLandingPage() {
       }),
     [],
   );
-  useEffect(() => subscribePublishedCmsPageBySlug("about-us", setAboutPage), []);
   useEffect(() => subscribePublishedCmsBlogs(setBlogs, 3), []);
   useEffect(() => subscribeServiceCardSettings(setServiceSettings), []);
 
@@ -180,7 +176,6 @@ export function CustomerLandingPage() {
     return () => window.clearInterval(timer);
   }, [homeBanners.length]);
 
-  const aboutParagraphs = safeParagraphs(aboutPage?.content, [landing.about.description]);
   const serviceSettingsById = useMemo(
     () => new Map(serviceSettings.map((setting) => [setting.id, setting])),
     [serviceSettings],
@@ -199,9 +194,96 @@ export function CustomerLandingPage() {
   );
   const activeBanner = homeBanners.length ? homeBanners[activeHomeBannerIndex % homeBanners.length] : null;
   const featuredBlog = blogs[0] || null;
+  const remainingBlogs = blogs.slice(1, 3);
+  const quickFeatures = [
+    { label: "Doctor Consult", href: "/doctors" },
+    { label: "Lab Tests", href: "/lab-tests" },
+    { label: "Medicine Order", href: "/pharmacy" },
+    { label: "Instant Call", href: "/instant-call" },
+  ];
+  const hospitalOptions = [
+    { title: "Nearby Hospitals", detail: "Find hospitals near you", href: "/hospitals" },
+    { title: "Top Rated Hospitals", detail: "Best hospitals and clinics", href: "/hospitals" },
+    { title: "Speciality Hospitals", detail: "Find by speciality", href: "/hospitals" },
+  ];
+
+  function handleHomeSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = homeSearchQuery.trim().toLowerCase();
+    if (!query) {
+      router.push("/doctors");
+      return;
+    }
+
+    const matchedService = landingHomeServices.find((service) => service.title.toLowerCase().includes(query));
+    if (matchedService && !matchedService.restricted) {
+      router.push(matchedService.href);
+      return;
+    }
+
+    if (query.includes("doctor") || query.includes("consult")) {
+      router.push("/doctors");
+      return;
+    }
+    if (query.includes("lab") || query.includes("test") || query.includes("ct") || query.includes("mri")) {
+      router.push("/lab-tests");
+      return;
+    }
+    if (query.includes("medicine") || query.includes("pharmacy") || query.includes("prescription")) {
+      router.push("/pharmacy");
+      return;
+    }
+    if (query.includes("hospital") || query.includes("surgery")) {
+      router.push("/hospitals");
+      return;
+    }
+    if (query.includes("ambulance") || query.includes("emergency")) {
+      router.push("/ambulance");
+      return;
+    }
+
+    router.push("/support");
+  }
 
   return (
     <CustomerSiteShell footer={landing.footer}>
+      <section className="mobile-home-top-shell">
+        <div className="mobile-home-search-panel">
+          <div className="mobile-home-search-copy">
+            <p className="site-section-eyebrow">Good Morning</p>
+            <h1>{landing.hero.title}</h1>
+            <p>{landing.hero.description}</p>
+          </div>
+
+          <form className="mobile-home-search-card" onSubmit={handleHomeSearch}>
+            <label className="mobile-home-search-label" htmlFor="home-service-search">
+              Search doctors, tests, medicines...
+            </label>
+            <div className="mobile-home-search-row">
+              <input
+                id="home-service-search"
+                className="mobile-home-search-input"
+                value={homeSearchQuery}
+                onChange={(event) => setHomeSearchQuery(event.target.value)}
+                placeholder="Search doctors, tests, medicines..."
+                aria-label="Search doctors, tests, or medicines"
+              />
+              <button type="submit" className="mobile-home-search-button">
+                Search
+              </button>
+            </div>
+          </form>
+
+          <div className="mobile-home-feature-row">
+            {quickFeatures.map((feature) => (
+              <Link key={feature.label} href={feature.href} className="mobile-home-feature-chip">
+                {feature.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="mobile-home-hero">
         <article
           className="mobile-home-banner"
@@ -249,7 +331,7 @@ export function CustomerLandingPage() {
           ) : null}
         </article>
 
-        <article className="mobile-home-side-card">
+        <Link href="/blogs" className="mobile-home-side-card mobile-home-side-card-link">
           {featuredBlog?.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={featuredBlog.image_url} alt={featuredBlog.title} className="mobile-home-side-image" />
@@ -259,7 +341,7 @@ export function CustomerLandingPage() {
           <span className="mobile-home-side-tag">{featuredBlog?.category || "Health Blog"}</span>
           <h2>{featuredBlog?.title || "How to prepare for a Lab Test"}</h2>
           <p>{featuredBlog?.excerpt || "Simple steps to get more accurate lab results before your next test."}</p>
-        </article>
+        </Link>
       </section>
 
       <section className="mobile-home-services-section">
@@ -267,8 +349,8 @@ export function CustomerLandingPage() {
           <div>
             <p className="site-section-eyebrow">Our Services</p>
           </div>
-          <Link href="/support" className="pill-link">
-            Need help?
+          <Link href="/doctors" className="pill-link">
+            View all
           </Link>
         </div>
 
@@ -294,34 +376,10 @@ export function CustomerLandingPage() {
         </div>
       </section>
 
-      <section id="about" className="site-section-card site-section-split">
-        <div>
-          <p className="site-section-eyebrow">{landing.about.eyebrow}</p>
-          <h2>{aboutPage?.title || landing.about.title}</h2>
-          {aboutParagraphs.map((paragraph) => (
-            <p key={paragraph} className="site-section-copy">
-              {paragraph}
-            </p>
-          ))}
-          <div className="site-highlight-list">
-            {landing.about.highlights.map((item) => (
-              <div key={item} className="site-highlight-item">
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="site-photo-card">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={landing.about.imageUrl} alt="About Saiman Healthcare" />
-        </div>
-      </section>
-
       <section className="site-section-card">
         <div className="site-section-head">
           <div>
-            <p className="site-section-eyebrow">Blogs</p>
+            <p className="site-section-eyebrow">Health Blogs</p>
             <h2>Health tips and updates from our care team.</h2>
           </div>
           <Link href="/blogs" className="pill-link">
@@ -330,7 +388,7 @@ export function CustomerLandingPage() {
         </div>
 
         <div className="landing-blog-grid">
-          {(blogs.length ? blogs : []).map((blog) => (
+          {(remainingBlogs.length ? remainingBlogs : blogs).map((blog) => (
             <article key={blog.id} className="landing-blog-card">
               {blog.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -355,6 +413,83 @@ export function CustomerLandingPage() {
             </article>
           ) : null}
         </div>
+      </section>
+
+      <section className="site-section-card">
+        <div className="site-section-head">
+          <div>
+            <p className="site-section-eyebrow">Find Hospitals</p>
+            <h2>Browse hospitals or connect with a doctor instantly.</h2>
+          </div>
+        </div>
+
+        <div className="home-dual-grid">
+          <div className="home-hospital-card">
+            {hospitalOptions.map((option) => (
+              <Link key={option.title} href={option.href} className="home-hospital-link">
+                <div>
+                  <strong>{option.title}</strong>
+                  <p>{option.detail}</p>
+                </div>
+                <span aria-hidden="true">→</span>
+              </Link>
+            ))}
+          </div>
+
+          <Link href="/instant-call" className="home-tele-card">
+            <span className="home-tele-live">LIVE</span>
+            <h3>Teleconsult</h3>
+            <p>Talk to a doctor anytime, anywhere for urgent non-emergency guidance.</p>
+            <span className="home-tele-action">Start Call</span>
+          </Link>
+        </div>
+      </section>
+
+      <section className="site-section-card">
+        <div className="site-section-head">
+          <div>
+            <p className="site-section-eyebrow">Pharmacy Support</p>
+            <h2>Order medicines or share a prescription in one step.</h2>
+          </div>
+        </div>
+
+        <div className="home-utility-grid">
+          <Link href="/pharmacy" className="home-utility-card">
+            <div className="home-utility-icon">+</div>
+            <div>
+              <strong>Medicine Order</strong>
+              <p>Delivered to your door from the pharmacy network.</p>
+            </div>
+            <span aria-hidden="true">→</span>
+          </Link>
+
+          <Link href="/records" className="home-utility-card accent">
+            <div className="home-utility-icon warm">Rx</div>
+            <div>
+              <strong>Prescription</strong>
+              <p>Upload and manage prescriptions, reports, and medical documents.</p>
+            </div>
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+      </section>
+
+      <section className="home-highlight-grid">
+        <Link href="/subscription-plans" className="home-highlight-card subscription">
+          <span className="home-highlight-tag">Popular</span>
+          <h3>Subscription Plan</h3>
+          <p>Save up to 20% on consultations, diagnostics, and patient care services.</p>
+          <strong>From ₹799</strong>
+          <span className="home-highlight-action">Explore</span>
+        </Link>
+
+        <a href="tel:01244567890" className="home-highlight-card emergency">
+          <span className="home-highlight-tag alert">24×7</span>
+          <h3>Emergency Help</h3>
+          <p>Call our emergency support line any time for urgent patient assistance.</p>
+          <strong>0124 456 7890</strong>
+          <span className="home-highlight-action light">Call Now</span>
+        </a>
       </section>
     </CustomerSiteShell>
   );
