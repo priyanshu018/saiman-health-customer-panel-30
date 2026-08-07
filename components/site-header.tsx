@@ -29,7 +29,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Home Care",
     items: [
-      { label: "Care Staff & Nursing", href: "/care-staff" },
+      { label: "Care Staff & Nursing", href: "/care-staff/request" },
       { label: "Equipment Rental", href: "/rental-equipment" },
     ],
   },

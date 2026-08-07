@@ -475,7 +475,7 @@ const HOME_SERVICE_CARDS: HomeServiceCard[] = [
   {
     id: "staffing",
     title: "Care Staff",
-    href: "/care-staff",
+    href: "/care-staff/request",
     imageSrc: "/home-service-staffing.png",
     searchTerms: ["care staff", "staffing", "nurse", "caregiver"],
   },

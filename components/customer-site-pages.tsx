@@ -57,7 +57,7 @@ const LANDING_HOME_SERVICES = [
   { id: "rental", title: "Rental Equipment", href: "/rental-equipment", imageSrc: "/home-service-rental.png" },
   { id: "hospitals", title: "Hospitals & Surgeries", href: "/hospitals", imageSrc: "/home-service-hospital.png" },
   { id: "health-card", title: "Health Card", href: "/health-card", imageSrc: "/home-service-health-card.png" },
-  { id: "staffing", title: "Care Staff", href: "/care-staff", imageSrc: "/home-service-staffing.png" },
+  { id: "staffing", title: "Care Staff", href: "/care-staff/request", imageSrc: "/home-service-staffing.png" },
 ] as const;
 
 function SitePageIntro({
