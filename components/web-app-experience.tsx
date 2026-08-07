@@ -902,6 +902,7 @@ export function WebHomeScreen() {
   const [openTickets, setOpenTickets] = useState(0);
   const [homeQuery, setHomeQuery] = useState("");
   const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
+  const [galleryBanners, setGalleryBanners] = useState<CmsBannerSummary[]>([]);
   const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
   const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
 
@@ -926,10 +927,12 @@ export function WebHomeScreen() {
     Promise.all([
       fetchServiceCardSettings().catch(() => [] as ServiceCardSetting[]),
       fetchHomeBanners("Home Banner").catch(() => [] as CmsBannerSummary[]),
-    ]).then(([settings, banners]) => {
+      fetchHomeBanners("Home Gallery").catch(() => [] as CmsBannerSummary[]),
+    ]).then(([settings, banners, gallery]) => {
       if (!active) return;
       setServiceSettings(settings);
       setHomeBanners(banners);
+      setGalleryBanners(gallery);
     });
 
     return () => {
@@ -939,6 +942,7 @@ export function WebHomeScreen() {
 
   useEffect(() => subscribeServiceCardSettings(setServiceSettings), []);
   useEffect(() => subscribeHomeBanners(setHomeBanners, "Home Banner"), []);
+  useEffect(() => subscribeHomeBanners(setGalleryBanners, "Home Gallery"), []);
 
   useEffect(() => {
     if (homeBanners.length <= 1) return;
@@ -1074,6 +1078,42 @@ export function WebHomeScreen() {
           </div>
         ) : null}
       </section>
+
+      {galleryBanners.length ? (
+        <section style={styles.sectionBlock}>
+          <div style={styles.sectionHead}>
+            <h2 style={styles.sectionTitle}>Gallery</h2>
+          </div>
+          <div className="responsive-grid-3col" style={styles.homeGalleryGrid}>
+            {galleryBanners.map((banner) => (
+              <button
+                key={banner.id}
+                type="button"
+                onClick={() => {
+                  void trackBannerClick(banner.id).catch(() => undefined);
+                }}
+                style={styles.homeGalleryCard}
+              >
+                {banner.image_url ? (
+                  <Image
+                    src={banner.image_url}
+                    alt={banner.title || "Gallery image"}
+                    fill
+                    sizes="(max-width: 960px) 100vw, 33vw"
+                    style={{ objectFit: "cover" }}
+                  />
+                ) : null}
+                <div style={styles.homeGalleryOverlay} />
+                <div style={styles.homeGalleryCopy}>
+                  <span style={styles.homeGalleryTag}>{banner.position || "Home Gallery"}</span>
+                  <strong style={styles.homeGalleryTitle}>{banner.title || "Saiman Healthcare"}</strong>
+                  <p style={styles.homeGalleryText}>{banner.description || "Live gallery image from the admin CMS."}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section style={styles.sectionBlock}>
         <div style={styles.sectionHead}>
@@ -6133,6 +6173,63 @@ const styles: Record<string, React.CSSProperties> = {
   mobileHomeBannerDotActive: {
     background: themeStyles.brand,
     transform: "scale(1.1)",
+  },
+  homeGalleryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 16,
+  },
+  homeGalleryCard: {
+    position: "relative",
+    display: "grid",
+    alignItems: "end",
+    minHeight: 260,
+    overflow: "hidden",
+    padding: 18,
+    border: "none",
+    borderRadius: 24,
+    background: "linear-gradient(135deg, #dbe8ff 0%, #f5f9ff 100%)",
+    boxShadow: "var(--shadow-card)",
+    cursor: "pointer",
+    textAlign: "left",
+    isolation: "isolate",
+  },
+  homeGalleryOverlay: {
+    position: "absolute",
+    inset: 0,
+    background: "linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.72))",
+    zIndex: 1,
+  },
+  homeGalleryCopy: {
+    position: "relative",
+    zIndex: 2,
+    display: "grid",
+    gap: 8,
+    color: "#fff",
+  },
+  homeGalleryTag: {
+    display: "inline-flex",
+    width: "fit-content",
+    padding: "7px 12px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.18)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    color: "#fff",
+    fontSize: "0.72rem",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  homeGalleryTitle: {
+    color: "#fff",
+    fontSize: "1.28rem",
+    lineHeight: 1.15,
+    letterSpacing: "-0.02em",
+  },
+  homeGalleryText: {
+    margin: 0,
+    color: "rgba(255,255,255,0.9)",
+    lineHeight: 1.55,
   },
   mobileHomeServicesShell: {
     display: "grid",

@@ -1916,6 +1916,68 @@ a {
   color: #7b8ba4;
 }
 
+.home-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.home-gallery-card {
+  position: relative;
+  display: grid;
+  align-items: end;
+  min-height: 260px;
+  overflow: hidden;
+  padding: 18px;
+  border: none;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #dbe8ff 0%, #f5f9ff 100%);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  text-align: left;
+}
+
+.home-gallery-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.72));
+}
+
+.home-gallery-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  color: white;
+}
+
+.home-gallery-copy span {
+  display: inline-flex;
+  width: fit-content;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-gallery-copy h3 {
+  margin: 0;
+  font-size: 1.28rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.home-gallery-copy p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.55;
+}
+
 .home-dual-grid,
 .home-utility-grid,
 .home-highlight-grid {
@@ -2247,6 +2309,7 @@ a {
 @media (max-width: 1200px) {
   .landing-service-grid,
   .landing-blog-grid,
+  .home-gallery-grid,
   .site-footer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2311,6 +2374,7 @@ a {
   .landing-stat-grid,
   .landing-service-grid,
   .landing-blog-grid,
+  .home-gallery-grid,
   .site-footer-grid,
   .mobile-home-feature-row,
   .home-highlight-grid {
@@ -2365,6 +2429,7 @@ a {
     gap: 14px;
   }
 
+  .home-gallery-grid,
   .mobile-home-feature-row,
   .home-highlight-grid {
     grid-template-columns: 1fr;

@@ -116,6 +116,7 @@ export function CustomerLandingPage() {
   const [landing, setLanding] = useState<LandingContent>(defaultLandingContent);
   const [blogs, setBlogs] = useState<CmsBlogSummary[]>([]);
   const [homeBanners, setHomeBanners] = useState<CmsBannerSummary[]>([]);
+  const [galleryBanners, setGalleryBanners] = useState<CmsBannerSummary[]>([]);
   const [activeHomeBannerIndex, setActiveHomeBannerIndex] = useState(0);
   const [serviceSettings, setServiceSettings] = useState<ServiceCardSetting[]>([]);
   const [homeSearchQuery, setHomeSearchQuery] = useState("");
@@ -127,11 +128,12 @@ export function CustomerLandingPage() {
       fetchPublishedCmsPageBySlug("home-landing"),
       fetchPublishedCmsBlogs(3),
       fetchHomeBanners("Home Banner"),
+      fetchHomeBanners("Home Gallery"),
       fetchServiceCardSettings(),
     ]).then((results) => {
       if (!active) return;
 
-      const [landingResult, blogResult, bannerResult, settingsResult] = results;
+      const [landingResult, blogResult, bannerResult, galleryResult, settingsResult] = results;
 
       if (landingResult.status === "fulfilled" && landingResult.value?.content) {
         setLanding(parseLandingContent(landingResult.value.content));
@@ -145,6 +147,10 @@ export function CustomerLandingPage() {
         setHomeBanners(bannerResult.value);
       }
 
+      if (galleryResult.status === "fulfilled") {
+        setGalleryBanners(galleryResult.value);
+      }
+
       if (settingsResult.status === "fulfilled") {
         setServiceSettings(settingsResult.value);
       }
@@ -156,6 +162,7 @@ export function CustomerLandingPage() {
   }, []);
 
   useEffect(() => subscribeHomeBanners(setHomeBanners, "Home Banner"), []);
+  useEffect(() => subscribeHomeBanners(setGalleryBanners, "Home Gallery"), []);
   useEffect(
     () =>
       subscribePublishedCmsPageBySlug("home-landing", (page) => {
@@ -343,6 +350,46 @@ export function CustomerLandingPage() {
           <p>{featuredBlog?.excerpt || "Simple steps to get more accurate lab results before your next test."}</p>
         </Link>
       </section>
+
+      {galleryBanners.length ? (
+        <section className="site-section-card">
+          <div className="site-section-head">
+            <div>
+              <p className="site-section-eyebrow">Gallery</p>
+              <h2>Highlights from Saiman care services and facilities.</h2>
+            </div>
+          </div>
+
+          <div className="home-gallery-grid">
+            {galleryBanners.map((banner) => (
+              <button
+                key={banner.id}
+                type="button"
+                className="home-gallery-card"
+                onClick={() => {
+                  void trackBannerClick(banner.id).catch(() => undefined);
+                }}
+              >
+                {banner.image_url ? (
+                  <Image
+                    src={banner.image_url}
+                    alt={banner.title || "Gallery image"}
+                    fill
+                    sizes="(max-width: 720px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    style={{ objectFit: "cover" }}
+                  />
+                ) : null}
+                <div className="home-gallery-overlay" />
+                <div className="home-gallery-copy">
+                  <span>{banner.position || "Home Gallery"}</span>
+                  <h3>{banner.title || "Saiman Healthcare"}</h3>
+                  <p>{banner.description || "Managed live from the admin CMS gallery section."}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mobile-home-services-section">
         <div className="site-section-head">
